@@ -15,9 +15,9 @@ import logging
 import math
 import sys
 
-from src.library.audio_device.calibrator import AudioDeviceCalibrator
-from src.library.audio_device.selector import AudioDeviceNotFound, AudioDeviceSelector
-from src.settings import settings
+from src.audio_device.calibrator import AudioDeviceCalibrator
+from src.audio_device.selector import AudioDeviceNotFound, AudioDeviceSelector
+from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

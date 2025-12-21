@@ -14,8 +14,8 @@ import logging
 import wave
 from pathlib import Path
 
-from src.library.datetime_stamp import DatetimeStamp
-from src.settings import settings
+from src.config.datetime_stamp import DatetimeStamp
+from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,10 @@ class AudioStreamsRecorder:
         timestamp = DatetimeStamp.get()
 
         if self._base_path.suffix:
-            name = f"{self._base_path.stem}_{timestamp}{self._base_path.suffix}"
+            name = f"{timestamp}_{self._base_path.stem}{self._base_path.suffix}"
             return str(self._base_path.parent / name)
 
-        return str(self._base_path / f"recording_{timestamp}.wav")
+        return str(self._base_path / f"{timestamp}_recording.wav")
 
     def _rotate(self):
         """Closes the current file and opens a new one."""
