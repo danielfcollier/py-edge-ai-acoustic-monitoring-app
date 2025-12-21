@@ -4,8 +4,6 @@ This document provides an overview of the YAMNet model, a powerful tool for clas
 
 *Disclaimer: This guide was prepared with the assistance of Google Gemini 2.5 Pro.*
 
----
-
 ## 1. Origin, Purpose, and References
 
 ### Origin

@@ -1,6 +1,6 @@
-# Contributing to py-umik-base-app
+# Contributing to py-edge-ai-acoustic-monitoring-app
 
-Thank you for your interest in contributing to the **py-umik-base-app**! I welcome contributions to help improve this audio analysis framework.
+Thank you for your interest in contributing to the **py-edge-ai-acoustic-monitoring-app**! I welcome contributions to help improve this acoustic monitoring app.
 
 This guide will help you set up your development environment and understand the workflows.
 
@@ -17,8 +17,8 @@ Before you begin, ensure you have the following installed on your system:
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/danielfcollier/py-umik-base-app.git](https://github.com/danielfcollier/py-umik-base-app.git)
-    cd py-umik-base-app
+    git clone [https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git)
+    cd py-edge-ai-acoustic-monitoring-app
     ```
 
 2.  **Install dependencies:**
@@ -66,13 +66,13 @@ Use `pytest` for unit testing.
     make coverage
     ```
 
-### Running the Applications
+### Running the Basic Applications
 You can run the built-in applications directly using `make` targets.
 
 * **Decibel Meter:** Runs the real-time decibel meter app.
     ```bash
     # Run with default settings (uses default mic)
-    make decibel-meter
+    make decibel-meter-default-mic
     
     # Run specifically with a UMIK-1 (requires calibration file path in F variable)
     make decibel-meter-umik-1 F="path/to/calib.txt"
@@ -81,7 +81,7 @@ You can run the built-in applications directly using `make` targets.
 * **Audio Recorder:** Runs the recording utility.
     ```bash
     # Record with default mic
-    make record
+    make record-default-mic
     
     # Record with UMIK-1 (requires calibration file)
     make record-umik-1 F="path/to/calib.txt"
