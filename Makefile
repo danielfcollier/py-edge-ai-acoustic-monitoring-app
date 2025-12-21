@@ -121,9 +121,13 @@ get-umik-id: ## Attempt to find and print the ID of the UMIK-1 microphone. Use S
 ifeq ($(SILENT),)
 	@echo -e "$(GREEN)>>> Searching for UMIK-1 device ID...$(NC)"
 endif
-	# if device not found, return empty string
-	@echo -n $(shell
-	@$(MAKE) list-audio-devices SILENT=$(SILENT) | grep -i "UMIK-1" | awk '{ print $$2 }' |)
+	@id=$$($(MAKE) --no-print-directory list-audio-devices SILENT=$(SILENT) | grep -i "UMIK-1" | awk '{ print $$2 }' || true); \
+	if [ -z "$$id" ]; then \
+		echo "Error: UMIK-1 device not found!" >&2; \
+		exit 1; \
+	fi; \
+	echo -n "$$id"
+
 calibrate-umik:  ## Run the calibration test script.
 ifndef F
 	$(error Calibration file path not set. Use 'make calibrate-umik F="<path/to/calibration_file.txt>" [SAMPLE_RATE=...] [NUM_TAPS=...]')
@@ -156,7 +160,7 @@ yamnet-model: ## Download the YAMNet model and class map.
 # Raspberry Pi Specific Targets
 #==========================================================
 
-fan-test:
+fan-test: ## Run the Raspberry Pi fan test script.
 	@echo -e "$(GREEN)>>> Running Raspberry Pi fan test...$(NC)"
 	@PYTHONPATH=$(BASE_DIR) $(PYTHON) $(SCRIPTS_DIR)/raspberrypi/fan_test.py
 	@echo -e "$(GREEN)>>> Fan test complete.$(NC)"
