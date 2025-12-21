@@ -4,6 +4,8 @@ This document explains the mathematical formulas and concepts behind common audi
 
 *Disclaimer: This guide was prepared with the assistance of Google Gemini 2.5 Pro.*
 
+
+
 ## 1. Peak Amplitude
 
 ### Definition
@@ -25,6 +27,7 @@ $$
 ### Purpose
 
 Indicates the absolute highest level reached by the signal. It's crucial for identifying potential **clipping** (distortion caused when the signal exceeds the maximum representable level), but it doesn't give a good sense of the *perceived loudness* or *average power*.
+
 
 ## 2. Root Mean Square (RMS)
 
@@ -48,6 +51,8 @@ $$
 ### Purpose
 
 Provides a measure of the signal's average power or effective amplitude. It correlates much better with perceived loudness for continuous sounds than peak amplitude does. It's the foundation for calculating decibel levels.
+
+
 
 ## 3. Decibels Full Scale (dBFS)
 
@@ -79,6 +84,8 @@ $$
 
 To quantify the level of a digital audio signal relative to its maximum possible value, primarily for preventing digital clipping and for mixing/mastering. It does *not* represent real-world loudness without calibration.
 
+
+
 ## 4. Decibels Sound Pressure Level (dBSPL)
 
 ### Definition
@@ -100,6 +107,8 @@ $$
 ### Purpose
 
 To quantify the actual, physical loudness of a sound in the environment. This is the standard metric for noise measurements, acoustics, and hearing safety.
+
+
 
 ## 4. Decibels Sound Pressure Level (dBSPL) - Calibrated
 
@@ -133,6 +142,8 @@ The dBSPL is then calculated using the dBFS value derived from the **calibrated*
 
 To quantify the actual, physical loudness of a sound in the environment with high accuracy across the frequency spectrum. This is the standard metric for noise measurements, acoustics, and hearing safety when precision is required.
 
+
+
 ## 5. Spectral Flux
 
 ### Definition
@@ -154,6 +165,8 @@ Spectral Flux measures the rate of change in the frequency spectrum of an audio 
 ### Purpose
 
 Excellent for **onset detection** (finding the start of new sound events). Steady sounds (like hums or wind) have low spectral flux, while the beginning of a note, a bark, or speech has high spectral flux. It helps distinguish dynamic events from constant background noise.
+
+
 
 ## 6. Loudness (LUFS)
 
