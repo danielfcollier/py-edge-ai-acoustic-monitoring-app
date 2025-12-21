@@ -20,6 +20,7 @@ The **miniDSP UMIK-1** is a specialized omnidirectional USB measurement micropho
 * **Official Product Page:** [miniDSP UMIK-1](https://www.minidsp.com/products/acoustic-measurement/umik-1)
 * **Calibration File Download:** [miniDSP UMIK-1 Calibration Tool](https://www.minidsp.com/products/acoustic-measurement/umik-1/umik-1-calibration-tool)
 
+
 ## 2. Relevance for Your Sound Monitoring Application
 
 Using a calibrated microphone like the UMIK-1 is the difference between building a simple "volume detector" and a true **acoustic monitoring instrument**.
@@ -29,14 +30,14 @@ The principle is simple: **Garbage In, Garbage Out.** The quality of your analys
 * **Uncalibrated Microphones (Laptops, Phones):** These are "colored." They are designed to boost the frequencies of human speech and cut low-frequency rumble. When you feed this biased signal into your application:
     * **LUFS measurements will be inaccurate**, as they will be calculated on an already altered signal.
     * **Low-frequency environmental noise** (like traffic rumble, HVAC hum, typically 20Hz-250Hz) will be severely underestimated or missed entirely. This is because these microphones are physically small and often electronically filtered to prioritize speech clarity.
-    * The YAMNet model receives a distorted version of reality, which can reduce its classification accuracy.
 
 * **Calibrated UMIK-1:** This provides a "ground truth" signal.
     * It ensures that a sound's energy is represented accurately across the entire frequency spectrum, **including critical low frequencies**.
     * This allows metrics like **LUFS** and **dBSPL** to be calculated with scientific accuracy, making your alerts and historical data meaningful and comparable.
     * It provides the machine learning model with a clean, unbiased signal, leading to more reliable classification.
 
-In short, for your application to produce trustworthy data, a calibrated input is not just a feature—it's a requirement.
+In short, for your application to produce trustworthy data, a calibrated input is not just a feature - it's a requirement.
+
 
 ## 3. The Real-Time Calibration Process
 
@@ -67,7 +68,7 @@ This is the core of the process and happens inside your consumer thread for ever
 1.  **Receive Raw Audio:** The thread gets a raw, uncalibrated audio chunk from the input queue.
 2.  **Apply Filter:** It immediately passes this raw chunk to the `audio_device_calibrator.apply()` method. This method uses `scipy.signal.lfilter` to perform a mathematical convolution between the audio data and the filter coefficients designed at startup. This step is computationally intensive.
 3.  **Get Calibrated Audio:** The output is a new audio chunk that has been corrected. Its frequency response is now perfectly flat.
-4.  **Process Further:** **All subsequent operations**—SAD (RMS/Flux), YAMNet inference, LUFS calculation, and file recording—are performed on this clean, calibrated audio chunk.
+4.  **Process Further:** **All subsequent operations** - SAD (RMS/Flux), LUFS calculation, and file recording - are performed on this clean, calibrated audio chunk.
 
 This ensures that every piece of data your application analyzes and saves is a scientifically accurate representation of the acoustic environment.
 
