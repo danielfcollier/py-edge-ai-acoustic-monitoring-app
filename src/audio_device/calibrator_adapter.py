@@ -11,8 +11,8 @@ Year: 2025
 
 import numpy as np
 
-from src.library.audio_device.calibrator import AudioDeviceCalibrator
-from src.library.interfaces import AudioProcessor
+from src.audio_device.calibrator import AudioDeviceCalibrator
+from src.models.interfaces import AudioProcessor
 
 
 class AudioDeviceCalibratorAdapter(AudioProcessor):
