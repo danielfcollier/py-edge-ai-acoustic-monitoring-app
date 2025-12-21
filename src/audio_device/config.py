@@ -11,8 +11,8 @@ Year: 2025
 
 import logging
 
-from src.library.audio_device.selector import AudioDeviceSelector
-from src.settings import settings
+from src.audio_device.selector import AudioDeviceSelector
+from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

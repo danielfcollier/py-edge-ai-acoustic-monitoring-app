@@ -16,8 +16,8 @@ import os
 import numpy as np
 from scipy.signal import firwin2, lfilter
 
-from src.library.cache_strategy import FileFilterCache, FilterCacheStrategy
-from src.settings import settings
+from src.config.settings import settings
+from src.models.cache_strategy import FileFilterCache, FilterCacheStrategy
 
 logger = logging.getLogger(__name__)
 

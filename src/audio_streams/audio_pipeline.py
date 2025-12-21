@@ -14,7 +14,7 @@ from datetime import datetime
 
 import numpy as np
 
-from src.library.interfaces import AudioProcessor, AudioSink
+from src.models.interfaces import AudioProcessor, AudioSink
 
 
 class AudioPipeline:

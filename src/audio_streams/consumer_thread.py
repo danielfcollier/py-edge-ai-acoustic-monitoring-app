@@ -13,7 +13,7 @@ import logging
 import queue
 import threading
 
-from src.library.audio_pipeline import AudioPipeline
+from src.audio_streams.audio_pipeline import AudioPipeline
 
 logger = logging.getLogger(__name__)
 

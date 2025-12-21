@@ -18,8 +18,8 @@ import threading
 
 import sounddevice as sd
 
-from src.library.audio_device.config import AudioDeviceConfig
-from src.library.datetime_stamp import DatetimeStamp
+from src.audio_device.config import AudioDeviceConfig
+from src.config.datetime_stamp import DatetimeStamp
 
 logger = logging.getLogger(__name__)
 

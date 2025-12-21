@@ -14,9 +14,9 @@ import logging
 from datetime import datetime
 
 import numpy as np
+from src.audio_streams.interfaces import AudioSink
 
-from src.library.audio_streams.recorder import AudioStreamsRecorder
-from src.library.interfaces import AudioSink
+from src.audio_streams.recorder import AudioStreamsRecorder
 
 logger = logging.getLogger(__name__)
 

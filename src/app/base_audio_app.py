@@ -18,8 +18,8 @@ from src import (
     AudioStreamsConsumerThread,
     AudioStreamsListenerThread,
 )
-from src.library.audio_pipeline import AudioPipeline
-from src.library.base_thread_app import BaseThreadApp
+from src.app.base_thread_app import BaseThreadApp
+from src.audio_streams.audio_pipeline import AudioPipeline
 
 logger = logging.getLogger(__name__)
 
