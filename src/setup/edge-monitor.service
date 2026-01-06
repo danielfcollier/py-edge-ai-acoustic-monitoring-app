@@ -1,0 +1,35 @@
+[Unit]
+Description=Edge Acoustic Monitor (Audio Intelligence)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={user}
+Group={group}
+WorkingDirectory={working_dir}
+
+# Environment Variables
+Environment="PATH={venv_bin}:$PATH"
+Environment="TF_CPP_MIN_LOG_LEVEL=3"
+
+# Command (Assumes 'edge-monitor' is installed in the venv)
+# We pass explicit paths to the config files in /etc/edge-monitor or ~/.config
+ExecStart={venv_bin}/edge-monitor --config {config_path} --env {env_path}
+
+# --- Audio Performance Tuning ---
+# 'fifo' is Real-Time scheduling (better than 'nice')
+# Priority 99 is the highest for user-space threads
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=99
+
+# Allow the process to request real-time priority (Critical for audio)
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+
+# Restart Policy
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
