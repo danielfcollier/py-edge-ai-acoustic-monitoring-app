@@ -1,0 +1,75 @@
+# --- 1. System Services Configuration ---
+services:
+  internet_enabled: true
+  
+  # Health Monitoring
+  heartbeat_interval_seconds: 60
+  gpio_heartbeat_pin: 17  # Raspberry Pi GPIO pin for LED
+  hc_ping_url: "https://hc-ping.com/YOUR-UUID-HERE"
+
+  # Cloud & Notifications
+  telegram_enabled: true
+  cloud_storage_enabled: true
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  
+  # Cloud Provider Settings
+  cloud:
+    provider: "magalu"
+    bucket_name: "acoustic-logs"
+
+# --- 2. AI Model Configuration ---
+feature_extractor:
+  # Set to true for Raspberry Pi (lighter load), false for PC/Dev
+  use_tflite: false 
+  
+  # Model Asset Paths
+  model_path_lite: "src/yamnet/yamnet.tflite"
+  model_path_full: "src/yamnet/model"
+  class_map_path: "src/yamnet/class_map/yamnet_class_map.csv"
+  
+  # Audio Processing
+  inference_interval_ms: 975
+  target_sample_rate: 16000
+
+# --- 3. Reporting & Analysis Configuration ---
+reporting:
+  days_to_report: 30
+  
+  # Regulatory/Desired Limits (dBSPL)
+  limits:
+    day_db: 55.0
+    night_db: 50.0
+  
+  # Map Raw YAMNet Labels -> High-Level Report Categories
+  category_mapping:
+    # Custom Overrides
+    "intruder_alert": "Security"
+    "help_shout": "Security"
+    "glass_break_verified": "Security"
+    "Speech": "Vocals"
+    "Narration": "Vocals"
+    "Music": "Nuisance"
+
+# --- 4. Security Policies ---
+policies:
+  - name: "Critical Intrusion"
+    description: "Always alert on glass break or gunshots."
+    condition: "current_event_label in ['Glass', 'Gunshot_explosion', 'Shatter'] and current_confidence > 0.7"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Suspicious Activity (Night)"
+    description: "Alert on footsteps or knocking."
+    condition: "current_event_label in ['Knock', 'Footsteps', 'Clapping', 'Speech']" 
+    actions:
+      - "telegram_alert"
+      - "cloud_upload"
+
+  - name: "Loud Noise Monitor"
+    description: "Log loud noises without alerting."
+    condition: "metrics['dbspl'] > 70"
+    actions:
+      - "log_metadata"
