@@ -1,21 +1,20 @@
 [project]
 name = "edge-ai-acoustic-monitoring-app"
 version = "0.1.0"
-description = "Edge AI Acoustic Monitoring System for Raspberry Pi"
+description = "Edge AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 
-# Production Dependencies
 dependencies = [
     "umik-base-app>=0.3.1a1.dev0",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
-    "tensorflow>=2.16.0",       # Relaxed slightly for broader compatibility
-    "tflite-runtime>=2.14.0",   # Added as requested
+    "tensorflow>=2.16.0",
+    "tflite-runtime>=2.14.0",
     "tensorflow-hub>=0.16.1",
     "rule-engine>=4.5.3",
     "pyyaml>=6.0.3",
@@ -34,6 +33,7 @@ dependencies = [
 [project.scripts]
 edge-monitor = "app.main:main"
 edge-setup-models = "scripts.setup_yamnet:main"
+edge-install-service = "scripts.install_service:main"
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
