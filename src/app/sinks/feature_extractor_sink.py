@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import resampy
-from umik_base_app import AudioSink
+from umik_base_app import AudioSink, AudioMetrics
 
 from ..context import PipelineContext
 from ..settings import settings
@@ -38,6 +38,10 @@ class FeatureExtractorSink(AudioSink):
         self._model_input_size = 15600  # YAMNet: 0.975s @ 16kHz
         self._raw_buffer = []
         self._input_sr = int(settings.AUDIO.SAMPLE_RATE)
+        
+        # Add a threshold (adjust based on your noise floor)
+        # 0.002 is roughly -54dB
+        self._sad_threshold = 0.002
 
         self._load_classes()
 
@@ -120,6 +124,21 @@ class FeatureExtractorSink(AudioSink):
 
     def handle_audio(self, audio_chunk: np.ndarray, timestamp) -> None:
         self._context.audio_pre_buffer.append(audio_chunk)
+        
+        # 2. SAD Optimization: Check RMS before processing
+        rms = AudioMetrics(audio_chunk)
+        
+        # If quiet, skip AI inference for this chunk
+        if rms < self._sad_threshold:
+            # We must still clear the classification so the Policy Engine doesn't 
+            # react to "stale" data from 1 second ago.
+            self._context.current_event_label = "Silence"
+            self._context.current_confidence = 0.0
+            
+            # Clear buffer so we don't process old audio later
+            self._raw_buffer = [] 
+            return
+        
         self._raw_buffer.append(audio_chunk)
 
         current_size = sum(len(c) for c in self._raw_buffer)

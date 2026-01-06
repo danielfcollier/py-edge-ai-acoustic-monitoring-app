@@ -73,3 +73,13 @@ policies:
     condition: "metrics['dbspl'] > 70"
     actions:
       - "log_metadata"
+
+  - name: "Glass Break Detector"
+    description: "Detects high-frequency impulse sounds."
+    condition: "current_event_label == 'Glass' and metrics['flux'] > 50.0"
+    actions: ["telegram_alert", "cloud_upload"]
+
+  - name: "Ignore Constant Hum"
+    description: "Prevents alerting on constant loud fans."
+    condition: "metrics['dbspl'] > 60 and metrics['flux'] < 5.0"
+    actions: ["log_metadata"] # Just log, don't alert

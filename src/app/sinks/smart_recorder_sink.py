@@ -56,6 +56,8 @@ class SmartRecorderSink(AudioSink):
         self._event_max_conf = 0.0
         self._detected_label = "Unknown"
         self._minor_alerts = set()
+        
+        self._last_spectrum = None # For Flux calc
 
     def _ensure_csv_header(self):
         """Creates the CSV with headers if it doesn't exist."""
@@ -92,6 +94,10 @@ class SmartRecorderSink(AudioSink):
         # 1. Check for new Triggers
         if "cloud_upload" in self._context.actions_to_take:
             self._handle_trigger(time.time())
+        
+        flux, self._last_spectrum = calculate_flux(audio_chunk, self._last_spectrum)
+        # Store in Context so Policy Engine can see it
+        self._context.metrics['flux'] = flux
 
         # 2. Process Recording State
         if self._context.is_recording:
