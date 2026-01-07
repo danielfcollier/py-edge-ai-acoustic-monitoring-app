@@ -24,6 +24,7 @@ dependencies = [
     "resampy>=0.4.3",
     "psutil>=7.2.1",
     "google-cloud-storage>=3.7.0",
+    "prometheus-client>=0.17.1",
 ]
 
 [project.urls]
@@ -31,9 +32,9 @@ dependencies = [
 "Bug Tracker" = "https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/issues"
 
 [project.scripts]
-edge-monitor = "app.main:main"
-edge-setup-models = "scripts.setup_yamnet:main"
-edge-install-service = "scripts.install_service:main"
+edge-monitor-run = "app.main:main"
+edge-monitor-setup-models = "scripts.setup_yamnet:main"
+edge-monitor-install-service = "scripts.install_service:main"
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
