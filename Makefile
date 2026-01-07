@@ -33,9 +33,9 @@ setup: ## Install system libraries (Ubuntu/Debian).
 	@echo -e "$(GREEN)>>> Installing system audio libraries...$(NC)"
 	@sudo apt update && sudo apt install -y libportaudio2 libsndfile1 -y
 
-venv: ## Create virtual environment.
-	@echo -e "$(GREEN)>>> Creating .venv...$(NC)"
-	@$(UV) venv
+venv: ## Create virtual environment using Python 3.11
+	@echo -e "$(GREEN)>>> Creating .venv with Python 3.11...$(NC)"
+	@$(UV) venv --python 3.11
 
 lock: ## Update uv.lock file.
 	@$(UV) lock
@@ -83,14 +83,14 @@ setup-models: ## Download YAMNet models and class maps.
 .PHONY: run run-default run-sim report
 run: ## Run Edge Monitor (Auto-detect config).
 	@echo -e "$(GREEN)>>> Starting Edge Monitor...$(NC)"
-	@$(UV) run edge-monitor
+	@$(UV) run edge-monitor-run
 
 run-default: ## Run with default PC microphone (No UMIK-1).
 	@echo -e "$(GREEN)>>> Starting with Default Microphone...$(NC)"
-	@$(UV) run edge-monitor --device "default"
+	@$(UV) run edge-monitor-run --device "default"
 
 run-sim: ## Run in simulation mode (if supported by base app).
-	@$(UV) run edge-monitor --config "security_policy.yaml" --device "sysdefault"
+	@$(UV) run edge-monitor-run --config "security_policy.yaml" --device "sysdefault"
 
 report: ## Generate PDF report from cloud metrics.
 	@echo -e "$(GREEN)>>> Generating Analytics Report...$(NC)"
