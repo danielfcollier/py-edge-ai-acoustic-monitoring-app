@@ -1,19 +1,17 @@
 """
 Policy Engine Sink.
-The 'Brain' of the system. Evaluates audio context against security policies.
-Supports hot-reloading of configuration.
+Evaluates the acoustic context against user-defined security policies.
+Triggers actions (e.g., Alert, Record) if conditions are met.
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
 Year: 2026
 """
 
-import datetime
 import logging
 import time
-from pathlib import Path
 
-import rule_engine
+import numpy as np
 from umik_base_app import AudioSink
 
 from ..context import PipelineContext
@@ -24,107 +22,124 @@ logger = logging.getLogger(__name__)
 
 class PolicyEngineSink(AudioSink):
     """
-    Evaluates context against security policies using Rule Engine.
+    The "Brain" of the pipeline.
+    It reads the 'context' populated by the Feature Extractor and decides
+    what actions should be taken based on the rules in 'security_policy.yaml'.
     """
 
     def __init__(self, context: PipelineContext):
+        """
+        Initializes the Policy Engine.
+
+        :param context: The shared pipeline context containing audio metrics and AI labels.
+        """
         self._context = context
         self._policies = settings.CONFIG.policies
-        self._compiled_rules = []
 
-        # Privacy Flag File (in RAM Disk for speed/security)
-        self._privacy_file = Path("/dev/shm/privacy_mode_active")
+        # Cooldown State Management
+        # Prevents spamming alerts for the same event (e.g. Barking for 10 minutes)
+        self._alert_cooldown = settings.CONFIG.services.alert_cooldown_seconds
+        self._last_trigger_times = {}  # {policy_name: timestamp}
 
-        # Hot Reload State
-        self._last_config_check = 0.0
-        try:
-            self._last_policy_mtime = Path("security_policy.yaml").stat().st_mtime
-        except FileNotFoundError:
-            self._last_policy_mtime = 0.0
+        # Time Constraints
+        self._day_start = settings.CONFIG.services.day_start_hour
+        self._night_start = settings.CONFIG.services.night_start_hour
 
-        self._compile_rules()
-        logger.info("🧠 Policy Engine Initialized.")
+        logger.info(f"🧠 Policy Engine Initialized. Loaded {len(self._policies)} rules.")
 
-    def _compile_rules(self):
-        """Pre-compiles rule strings for performance."""
-        self._compiled_rules = []  # Reset list
-        for policy in self._policies:
-            try:
-                # Create a rule object from the string (e.g., "confidence > 0.8")
-                rule = rule_engine.Rule(policy.condition)
-                self._compiled_rules.append((policy, rule))
-                logger.debug(f"Compiled Rule '{policy.name}': {policy.condition}")
-            except rule_engine.RuleSyntaxError as e:
-                logger.error(f"❌ Invalid Syntax in Policy '{policy.name}': {e}")
+    def handle_audio(self, audio_chunk: np.ndarray, timestamp: float) -> None:
+        """
+        Evaluates all policies against the current audio context.
 
-    def _check_environment_state(self):
-        """Updates environment flags (Night Time, Privacy Mode)."""
-        # 1. Check Privacy
-        self._context.privacy_mode_active = self._privacy_file.exists()
+        :param audio_chunk: Raw audio data (unused here, but required by interface).
+        :param timestamp: The occurrence time of the chunk.
+        """
+        # Reset actions for this frame (they are recalculated every cycle)
+        self._context.actions_to_take = []
 
-        # 2. Check Night Time (10PM - 6AM)
-        now = datetime.datetime.now().time()
-        start = datetime.time(22, 0)
-        end = datetime.time(6, 0)
-
-        if start <= end:
-            is_night = start <= now <= end
-        else:
-            is_night = start <= now or now <= end
-
-        self._context.is_night_time = is_night
-
-    def _check_config_update(self):
-        """Reloads security_policy.yaml if changed."""
-        if time.time() - self._last_config_check < 5.0:
+        # If silence, we skip detailed eval, but let's log it for debug parity
+        if self._context.current_event_label == "Silence":
+            logger.debug("💤 Context is Silence. Skipping policy eval.")
             return
 
-        try:
-            current_mtime = Path("security_policy.yaml").stat().st_mtime
-            if current_mtime > self._last_policy_mtime:
-                logger.info("🔄 Policy file changed. Reloading...")
-                settings.load_policy_file("security_policy.yaml")
-                self._policies = settings.CONFIG.policies
-                self._compile_rules()
-                self._last_policy_mtime = current_mtime
-                logger.info("✅ Policies reloaded successfully.")
-        except FileNotFoundError:
-            pass  # File might be temporarily missing during edit
-        except Exception as e:
-            logger.error(f"❌ Failed to reload policy: {e}")
+        # Determine Time Context
+        now_struct = time.localtime(time.time())
+        current_hour = now_struct.tm_hour
 
-        self._last_config_check = time.time()
+        # Check if it is currently "Night" based on settings
+        # e.g., if Night starts at 22 and Day starts at 6:
+        # Night is >= 22 OR < 6
+        is_night = (current_hour >= self._night_start) or (current_hour < self._day_start)
 
-    def handle_audio(self, audio_chunk, timestamp) -> None:
-        # 1. Maintenance
-        self._check_config_update()
-        self._check_environment_state()
-
-        # 2. Build Facts for Rule Engine
-        facts = {
+        # Prepare the Evaluation Scope (Variables available in YAML 'condition')
+        eval_scope = {
             "current_event_label": self._context.current_event_label,
             "current_confidence": self._context.current_confidence,
             "metrics": self._context.metrics,
-            "is_night_time": self._context.is_night_time,
-            "privacy_mode_active": self._context.privacy_mode_active,
+            # Time Helpers
+            "current_hour": current_hour,
+            "is_night": is_night,
+            "is_day": not is_night,
         }
 
-        # 3. Evaluate Rules
-        triggered_actions = set()
+        # 🔍 DEBUG: Show exactly what the engine sees this frame
+        logger.debug(
+            f"🔍 EVAL CONTEXT | Time: {current_hour}h ({'Night' if is_night else 'Day'}) | "
+            f"Label: '{eval_scope['current_event_label']}' ({eval_scope['current_confidence']:.2f}) | "
+            f"dB: {eval_scope['metrics'].get('dbspl', 0):.1f}"
+        )
 
-        for policy, rule in self._compiled_rules:
-            if self._context.privacy_mode_active and not policy.ignore_privacy:
-                continue
+        current_time = time.time()
 
+        for policy in self._policies:
             try:
-                if rule.matches(facts):
-                    logger.info(f"🚨 Rule Triggered: {policy.name}")
-                    triggered_actions.update(policy.actions)
-            except Exception:
-                pass
+                # 1. Check Condition (Dynamic Eval)
+                condition_met = eval(policy.condition, {"__builtins__": None}, eval_scope)
 
-        # 4. Update Context
-        self._context.actions_to_take = list(triggered_actions)
+                if condition_met:
+                    # 2. Check Cooldown (Only for alerting actions)
+                    if self._should_trigger(policy.name, current_time):
+                        # 3. Apply Actions
+                        self._trigger_policy(policy)
 
-        if self._context.actions_to_take:
-            logger.info(f"⚡ Actions Queued: {self._context.actions_to_take}")
+                        # Update Cooldown
+                        self._last_trigger_times[policy.name] = current_time
+                    else:
+                        # 🔍 DEBUG: Condition matched, but cooldown blocked it
+                        remaining = int(
+                            self._alert_cooldown - (current_time - self._last_trigger_times.get(policy.name, 0))
+                        )
+                        logger.debug(
+                            f"   ⏳ Policy '{policy.name}' MATCHED but matches Cooldown ({remaining}s remaining)."
+                        )
+                else:
+                    # 🔍 DEBUG: Condition failed (Optional: comment out if too verbose)
+                    # logger.debug(f"   ❌ Policy '{policy.name}' condition not met.")
+                    pass
+
+            except Exception as e:
+                # Log error but don't crash the pipeline
+                logger.error(f"❌ Policy '{policy.name}' eval failed: {e}")
+
+    def _should_trigger(self, policy_name: str, now: float) -> bool:
+        """
+        Determines if a policy is allowed to trigger based on cooldowns.
+
+        :param policy_name: The unique name of the policy rule.
+        :param now: Current timestamp.
+        :return: True if the policy can trigger, False if it's on cooldown.
+        """
+        last_time = self._last_trigger_times.get(policy_name, 0)
+        return (now - last_time) > self._alert_cooldown
+
+    def _trigger_policy(self, policy):
+        """
+        Executes the side-effects of a matching policy.
+
+        :param policy: The PolicyRule object that matched.
+        """
+        logger.info(f"🚨 Policy Triggered: {policy.name} [{self._context.current_event_label}]")
+        logger.debug(f"   -> Actions Queued: {policy.actions}")
+
+        # Extend the list of actions for downstream sinks (Recorder, Uploader)
+        self._context.actions_to_take.extend(policy.actions)

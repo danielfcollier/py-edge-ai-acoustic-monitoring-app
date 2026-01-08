@@ -25,6 +25,7 @@ dependencies = [
     "psutil>=7.2.1",
     "google-cloud-storage>=3.7.0",
     "prometheus-client>=0.17.1",
+    "python-dotenv>=1.2.1",
 ]
 
 [project.urls]
