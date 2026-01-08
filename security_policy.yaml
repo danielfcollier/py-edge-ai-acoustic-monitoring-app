@@ -1,0 +1,90 @@
+# --- 0. Global Variables ---
+# Define your constants here. They will be injected into the settings below.
+variables:
+  day_start: 6        # 06:00 AM
+  night_start: 22     # 10:00 PM
+  day_limit: 60.0     # Decibel limit for Day
+  night_limit: 50.0   # Decibel limit for Night
+
+# --- 1. System Services Configuration ---
+services:
+  internet_enabled: true
+  
+  # Health Monitoring
+  heartbeat_interval_seconds: 60
+  gpio_heartbeat_pin: 17
+  hc_ping_url: "{HC_PING_URL}"
+
+  # Cloud & Notifications
+  telegram_enabled: true
+  cloud_storage_enabled: true
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  alert_cooldown_seconds: 60
+
+  # These values are injected from the variables block above
+  day_start_hour: "{day_start}"
+  night_start_hour: "{night_start}"
+  
+  # Cloud Provider Settings
+  cloud:
+    provider: "magalu"
+    bucket_name: "acoustic-logs"
+
+# --- 2. AI Model Configuration ---
+feature_extractor:
+  use_tflite: false 
+
+  sad_threshold_rms: 0.002
+  sad_threshold_flux: 5.0
+  sad_threshold_dbspl: 45.0
+
+# --- 3. Reporting & Analysis Configuration ---
+reporting:
+  days_to_report: 30
+  
+  limits:
+    day_db: "{day_limit}"
+    night_db: "{night_limit}"
+  
+  category_mapping:
+    "intruder_alert": "Security"
+    "help_shout": "Security"
+    "glass_break_verified": "Security"
+    "Speech": "Vocals"
+    "Narration": "Vocals"
+    "Music": "Nuisance"
+    "Musical_instrument": "Nuisance"
+    "Domestic_animals": "Nature"
+
+# --- 4. Security Policies ---
+policies:
+  # 1. CRITICAL: High Priority (Always Active)
+  - name: "Critical Intrusion"
+    description: "Always alert on glass break, gunshots or screaming."
+    condition: "current_event_label in ['Glass', 'Gunshot_explosion', 'Shatter', 'Scream'] and current_confidence > 0.7"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  # 2. DAYTIME: Animals & Music
+  - name: "Daytime Activity Monitor"
+    description: "Catch loud animals or music during the day."
+    condition: >
+      (current_hour >= {day_start} and current_hour < {night_start}) and 
+      (current_event_label in ['Animal', 'Domestic_animals', 'Dog', 'Bark', 'Music', 'Musical_instrument']) and 
+      metrics['dbspl'] > {day_limit}
+    actions:
+      - "cloud_upload"
+    ignore_privacy: false
+
+  # 3. NIGHTTIME: All Sounds
+  - name: "Night Noise Monitor"
+    description: "Upload any sound above limit at night."
+    condition: >
+      (current_hour >= {night_start} or current_hour < {day_start}) and 
+      metrics['dbspl'] > {night_limit}
+    actions:
+      - "cloud_upload"
+    ignore_privacy: false

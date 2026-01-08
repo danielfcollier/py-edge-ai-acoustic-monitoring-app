@@ -1,0 +1,33 @@
+# 👶 Smart Baby Monitor (Nursery Mode)
+
+feature_extractor:
+  use_tflite: true
+  inference_interval_ms: 975 # Lower threshold in settings might be needed, or handle it via logic below
+
+reporting:
+  days_to_report: 7
+  limits:
+    day_db: 45.0
+    night_db: 40.0
+
+policies:
+  - name: "Baby Distress"
+    description: "Immediate alert for crying or screaming."
+    condition: "current_event_label in ['Baby cry, infant crying', 'Crying, sobbing', 'Whimper'] and current_confidence > 0.5"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload" # Save clip to analyze sleep quality later
+    ignore_privacy: true
+
+  - name: "Loud Noise Hazard"
+    description: "Alert if sudden loud noises occur in the nursery."
+    condition: "metrics['dbspl'] > 70"
+    actions:
+      - "telegram_alert"
+      - "log_metadata"
+
+  - name: "Activity Log"
+    description: "Log waking/movement sounds without alerting."
+    condition: "current_event_label in ['Babbling', 'Laughter', 'Speech']"
+    actions:
+      - "log_metadata"
