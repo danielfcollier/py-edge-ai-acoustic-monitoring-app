@@ -1,0 +1,77 @@
+# test_policy.yaml
+#
+#  edge-monitor --config test_policy.yaml
+
+# --- 1. System Services ---
+services:
+  # Disable heavy services for testing if you want
+  internet_enabled: true
+  telegram_enabled: true 
+  cloud_storage_enabled: true
+  
+  # Set Cooldown to 0 so you can rapid-fire test events
+  alert_cooldown_seconds: 5 
+  
+  # Time settings (irrelevant for these tests, but required by schema)
+  day_start_hour: 6
+  night_start_hour: 22
+
+  cloud:
+    provider: "magalu"
+    bucket_name: "acoustic-logs"
+
+# --- 2. AI Configuration (High Sensitivity) ---
+feature_extractor:
+  use_tflite: false
+  model_path_lite: "src/yamnet/yamnet.tflite"
+  model_path_full: "src/yamnet/model"
+  class_map_path: "src/yamnet/class_map/yamnet_class_map.csv"
+  
+  inference_interval_ms: 975
+  target_sample_rate: 16000
+  
+  # LOWER THESE for testing so it picks up even quiet snaps
+  sad_threshold_rms: 0.0005 
+  sad_threshold_flux: 1.0   
+  sad_threshold_dbspl: 35.0 
+
+# --- 3. Reporting ---
+reporting:
+  days_to_report: 30
+  category_mapping: {}
+
+# --- 4. Test Policies ---
+policies:
+  - name: "TEST: Hand Clapping"
+    description: "Detects clapping (Percussive + Class)."
+    # 'Clapping' is class ID 60 in YAMNet
+    condition: "current_event_label == 'Clapping' and current_confidence > 0.4"
+    actions: 
+      - "log_metadata"
+      - "record_evidence" # Verify pre-roll works
+
+  - name: "TEST: Finger Snapping"
+    description: "Detects snapping (High Flux, low volume)."
+    # 'Finger snapping' is class ID 62
+    condition: "current_event_label == 'Finger snapping'"
+    actions: 
+      - "log_metadata"
+
+  - name: "TEST: Voice Activation"
+    description: "Detects speech."
+    condition: "current_event_label in ['Speech', 'Narration', 'Yell']"
+    actions: 
+      - "log_metadata"
+
+  - name: "TEST: Physics Trigger (Flux)"
+    description: "Detects ANY sudden sound (Flux) regardless of AI label."
+    # Great for testing if the SAD Gate is working
+    condition: "metrics['flux'] > 10.0"
+    actions: 
+      - "log_metadata"
+
+  - name: "TEST: Physics Trigger (Loudness)"
+    description: "Detects loud shouting."
+    condition: "metrics['dbspl'] > 80.0"
+    actions: 
+      - "log_metadata"
