@@ -1,6 +1,7 @@
 # fan_test.py
-import RPi.GPIO as GPIO
 import time
+
+import RPi.GPIO as GPIO
 
 # --- Configuration ---
 # The GPIO pin number your fan's control wire is connected to.

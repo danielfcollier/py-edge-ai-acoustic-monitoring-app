@@ -1,0 +1,26 @@
+[Unit]
+Description=Edge Audio Producer (Mic -> ZMQ)
+After=sound.target network.target
+
+[Service]
+Type=simple
+User={user}
+Group={group}
+WorkingDirectory={working_dir}
+Environment="PATH={venv_bin}:$PATH"
+Environment="TF_CPP_MIN_LOG_LEVEL=3"
+
+# Producer Mode: Only Captures & Sends
+ExecStart={venv_bin}/edge-monitor --config {config_path} --env {env_path} --run-mode producer --zmq-port 5555
+
+# Real-Time Priority
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=99
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
