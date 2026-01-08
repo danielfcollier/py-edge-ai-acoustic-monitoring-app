@@ -1,4 +1,4 @@
-# --- 0. Global Variables ---
+# --- Global Variables ---
 # Define your constants here. They will be injected into the settings below.
 variables:
   day_start: 6        # 06:00 AM
@@ -6,7 +6,14 @@ variables:
   day_limit: 60.0     # Decibel limit for Day
   night_limit: 50.0   # Decibel limit for Night
 
-# --- 1. System Services Configuration ---
+  # Hardware Calibration
+  calibration_file_path: "src/umik-1/7175488.txt"
+
+# --- Hardware Configuration ---
+hardware:
+  calibration_file: "{calibration_file_path}"
+
+# --- System Services Configuration ---
 services:
   internet_enabled: true
   
@@ -31,7 +38,7 @@ services:
     provider: "magalu"
     bucket_name: "acoustic-logs"
 
-# --- 2. AI Model Configuration ---
+# --- AI Model Configuration ---
 feature_extractor:
   use_tflite: false 
 
@@ -39,7 +46,7 @@ feature_extractor:
   sad_threshold_flux: 5.0
   sad_threshold_dbspl: 45.0
 
-# --- 3. Reporting & Analysis Configuration ---
+# --- Reporting & Analysis Configuration ---
 reporting:
   days_to_report: 30
   
@@ -57,7 +64,7 @@ reporting:
     "Musical_instrument": "Nuisance"
     "Domestic_animals": "Nature"
 
-# --- 4. Security Policies ---
+# --- Security Policies ---
 policies:
   # 1. CRITICAL: High Priority (Always Active)
   - name: "Critical Intrusion"

@@ -18,6 +18,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 from umik_base_app import AppArgs, AudioBaseApp, AudioPipeline
 
+from .calibration import setup_calibration
 from .context import PipelineContext
 from .services.cloud_uploader_service import CloudUploaderService
 from .services.health_monitor_service import HealthMonitorService
@@ -27,7 +28,18 @@ from .sinks.policy_engine_sink import PolicyEngineSink
 from .sinks.smart_recorder_sink import SmartRecorderSink
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("Main")
+logger = logging.getLogger(__name__)
+
+# Suppress noisy HTTP libraries
+for lib in ["httpx", "httpcore"]:
+    lib_logger = logging.getLogger(lib)
+    lib_logger.setLevel(logging.ERROR)
+    lib_logger.propagate = False
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.ERROR)
+    formatter = logging.Formatter("%(asctime)s [ERROR] %(name)s: %(message)s")
+    handler.setFormatter(formatter)
+    lib_logger.addHandler(handler)
 
 
 def parse_cli_args():
@@ -45,6 +57,7 @@ def ensure_models_present():
     if not model_path.exists():
         logger.info("⬇️ First run detected. Downloading AI models...")
         from scripts import setup_models
+
         setup_models.main()
 
 
@@ -58,24 +71,24 @@ def main():
 
     if args.env and Path(args.env).exists():
         logger.info(f"Loading secrets from {args.env}")
-    
+
     settings.load_policy_file(args.config)
-    
+
     ensure_models_present()
 
     sys.argv = [sys.argv[0]] + unknown
     base_args = AppArgs.get_args()
-    app_config = AppArgs.validate_args(base_args)
+
+    app_config = setup_calibration(base_args)
 
     logger.info(f"🚀 Initializing in [{app_config.run_mode.upper()}] mode")
 
     services = []
-    
+
     health_monitor = HealthMonitorService()
     health_monitor.start()
     services.append(health_monitor)
 
-    uploader = None
     if app_config.run_mode in ["monolithic", "consumer"]:
         uploader = CloudUploaderService()
         uploader.start()
