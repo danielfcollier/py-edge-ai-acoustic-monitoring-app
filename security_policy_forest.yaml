@@ -1,0 +1,36 @@
+# 🌲 Forest / Environmental Guardian (Ranger Mode)
+
+services:
+  internet_enabled: true
+  retry_attempts: 10
+  retry_delay_seconds: 60
+
+reporting:
+  days_to_report: 90
+  limits:
+    day_db: 80.0
+    night_db: 80.0
+
+policies:
+  - name: "Illegal Logging Alert"
+    description: "Detects chainsaws or heavy machinery."
+    condition: "current_event_label in ['Chainsaw', 'Saw', 'Engine', 'Idling'] and current_confidence > 0.7"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Poaching Alert"
+    description: "Gunshots require immediate evidence preservation."
+    condition: "current_event_label in ['Gunshot', 'Cap gun', 'Explosion'] and current_confidence > 0.6"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Vehicle Intrusion"
+    description: "Detects vehicles on protected trails."
+    condition: "current_event_label in ['Vehicle', 'Car', 'Truck', 'Motorcycle']"
+    actions:
+      - "log_metadata"
+      - "cloud_upload"

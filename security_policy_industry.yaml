@@ -1,0 +1,28 @@
+# 🏭 Industrial / Server Room Monitor (Industrial Mode)
+
+reporting:
+  limits:
+    day_db: 85.0 # OSHA limit consideration
+    night_db: 85.0
+
+policies:
+  - name: "Alarm Detection"
+    description: "Detects fire alarms, sirens, or buzzers."
+    condition: "current_event_label in ['Alarm', 'Siren', 'Fire alarm', 'Buzzer'] and current_confidence > 0.8"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Mechanical Failure"
+    description: "Detects abnormal mechanical sounds (grinding, impact)."
+    condition: "current_event_label in ['Glass', 'Shatter', 'Hammer', 'Drill', 'Grinding']"
+    actions: 
+      - "telegram_alert"
+      - "log_metadata"
+
+  - name: "Silence Check"
+    description: "Alert if the server room goes unnaturally silent (Fan failure?)."
+    condition: "metrics['dbspl'] < 40" 
+    actions:
+      - "telegram_alert"
