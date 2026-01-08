@@ -65,8 +65,8 @@ class FeatureExtractorSink(AudioSink):
         self._sad_threshold_dbspl = self._config.sad_threshold_dbspl
 
         # Calibration Data (Safe access)
-        self._mic_sensitivity = getattr(settings.AUDIO, "NOMINAL_SENSITIVITY_DBFS", None)
-        self._ref_dbspl = getattr(settings.AUDIO, "REFERENCE_DBSPL", None)
+        self._mic_sensitivity = getattr(settings.HARDWARE, "NOMINAL_SENSITIVITY_DBFS", None)
+        self._ref_dbspl = getattr(settings.HARDWARE, "REFERENCE_DBSPL", None)
 
         # Setup
         self._load_classes()
@@ -81,7 +81,7 @@ class FeatureExtractorSink(AudioSink):
             self._init_tensorflow()
 
         logger.info(
-            f"Feature Extractor Ready. Input: {self._input_sr}Hz -> Model: {self._target_sr}Hz. "
+            f"📌 Feature Extractor Ready. Input: {self._input_sr}Hz -> Model: {self._target_sr}Hz. "
             f"SAD Gate: [RMS>{self._sad_threshold_rms} | Flux>{self._sad_threshold_flux}] "
             f"-> [dBSPL>{self._sad_threshold_dbspl} (If Calibrated)]"
         )
@@ -146,6 +146,15 @@ class FeatureExtractorSink(AudioSink):
         except ImportError:
             raise ImportError("TensorFlow not found. Install 'tensorflow'.")
 
+        if self._config.force_cpu:
+            try:
+                gpus = tf.config.list_physical_devices("GPU")
+                if gpus:
+                    tf.config.set_visible_devices([], "GPU")
+                    logger.info("🚫 GPU disabled by configuration (force_cpu=True).")
+            except Exception as e:
+                logger.warning(f"Failed to force CPU mode: {e}")
+
         model_path = self._config.model_path_full
         if not Path(model_path).exists():
             raise FileNotFoundError(f"Full Model not found at {model_path}")
@@ -180,12 +189,10 @@ class FeatureExtractorSink(AudioSink):
         # 3. Stage 2: Precision Physics (Expensive & Calibrated)
         dbspl = 0.0
         if self._mic_sensitivity is not None and self._ref_dbspl is not None:
-            # We only calculate SPL if we have calibration data
             dbfs = AudioMetrics.dBFS(audio_chunk)
             dbspl = AudioMetrics.dBSPL(dbfs, self._mic_sensitivity, self._ref_dbspl)
 
             # SAD Stage 2: SPL Filter
-            # If it passed RMS check but is actually very quiet in dBSPL (e.g. mic gain noise)
             if dbspl < self._sad_threshold_dbspl:
                 self._handle_silence(dbspl_val=dbspl, rms_val=rms)
                 return
@@ -193,7 +200,7 @@ class FeatureExtractorSink(AudioSink):
             # Update Context with valid SPL
             self._context.metrics["dbspl"] = dbspl
         else:
-            # Uncalibrated: We skip SAD Stage 2 and SPL calculation
+            # Uncalibrated: Skip SAD Stage 2 and SPL calculation
             pass
 
         # 4. Update Prometheus (Active State)

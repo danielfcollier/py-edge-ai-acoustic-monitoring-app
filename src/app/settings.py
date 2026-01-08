@@ -47,6 +47,7 @@ class PolicyRule(BaseModel):
 
 class FeatureExtractorConfig(BaseModel):
     use_tflite: bool = True
+    force_cpu: bool = True
     model_path_lite: str = "src/yamnet/yamnet.tflite"
     model_path_full: str = "src/yamnet/model"
     class_map_path: str = "src/yamnet/class_map/yamnet_class_map.csv"
@@ -98,11 +99,14 @@ class ServiceConfig(BaseModel):
     hc_ping_url: str | None = None
 
 
-class AppConfig(BaseModel):
-    target_device: str | None = "UMIK-1"
+class HardwareConfig(BaseModel):
+    calibration_file: str | None = None
 
+
+class AppConfig(BaseModel):
     variables: dict[str, Any] = Field(default_factory=dict)
 
+    hardware: HardwareConfig = HardwareConfig()
     feature_extractor: FeatureExtractorConfig
     policies: list[PolicyRule]
     services: ServiceConfig = ServiceConfig()
@@ -177,17 +181,35 @@ class AppSettings(BaseSettings):
         self._apply_logging_config()
         self._validate_services()
 
+    def inject_hardware_settings(self, base_args: Any):
+        """
+        Injects hardware-specific settings (like calibration file) into the base app arguments.
+        This triggers auto-detection mechanisms in the base app (e.g., UMIK-1).
+        """
+        if not self.CONFIG or not self.CONFIG.hardware:
+            return
+
+        cal_path = self.CONFIG.hardware.calibration_file
+
+        if cal_path:
+            logger.info(f"🎤 Injecting Calibration File: '{cal_path}'")
+
+            if not Path(cal_path).exists():
+                logger.warning(f"⚠️ WARNING: Calibration file at '{cal_path}' does not exist! App may crash.")
+
+            base_args.calibration_file = cal_path
+
     def _apply_logging_config(self):
         """Sets log levels based on .env variables defined in this class."""
 
         # Map .env fields to module paths
         log_map = {
             "__main__": self.LOG_LEVEL_MAIN,
-            "src.sinks.feature_extractor_sink": self.LOG_LEVEL_FEATURE_EXTRACTOR,
-            "src.sinks.policy_engine_sink": self.LOG_LEVEL_POLICY_ENGINE,
-            "src.sinks.smart_recorder_sink": self.LOG_LEVEL_SMART_RECORDER,
-            "src.services.telegram": self.LOG_LEVEL_TELEGRAM,
-            "src.services": self.LOG_LEVEL_SERVICES,
+            "app.sinks.feature_extractor_sink": self.LOG_LEVEL_FEATURE_EXTRACTOR,
+            "app.sinks.policy_engine_sink": self.LOG_LEVEL_POLICY_ENGINE,
+            "app.sinks.smart_recorder_sink": self.LOG_LEVEL_SMART_RECORDER,
+            "app.services.telegram_bot_client": self.LOG_LEVEL_TELEGRAM,
+            "app.services": self.LOG_LEVEL_SERVICES,
             "umik_base_app": self.LOG_LEVEL_MAIN,
         }
 

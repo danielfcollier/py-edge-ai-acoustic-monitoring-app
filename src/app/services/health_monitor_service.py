@@ -9,7 +9,6 @@ Year: 2026
 
 import logging
 import threading
-import time
 
 import httpx
 
@@ -17,7 +16,8 @@ from ..settings import settings
 
 logger = logging.getLogger(__name__)
 
-BLINK_SECONDS = 0.1
+BLINK_DURATION_SECONDS = 0.1
+PING_TIMEOUT_SECONDS = 10.0
 
 
 class HealthMonitorService:
@@ -75,7 +75,7 @@ class HealthMonitorService:
                 self._blink_led()
 
             if self._config.internet_enabled and url:
-                logger.debug(f"Sending ping to Heartbeat url: {url}")
+                logger.debug(f"••• Sending ping to Heartbeat url: {url}")
                 self._send_ping(url)
 
             # Wait for next interval or stop signal
@@ -88,12 +88,20 @@ class HealthMonitorService:
         Pattern: ON -> hold -> OFF -> hold -> ON -> hold -> OFF
         """
         try:
+            # Blink 1
             self._led.on()
-            time.sleep(BLINK_SECONDS)
+            if self._stop_event.wait(BLINK_DURATION_SECONDS):
+                return
+
             self._led.off()
-            time.sleep(BLINK_SECONDS)
+            if self._stop_event.wait(BLINK_DURATION_SECONDS):
+                return
+
+            # Blink 2
             self._led.on()
-            time.sleep(BLINK_SECONDS)
+            if self._stop_event.wait(BLINK_DURATION_SECONDS):
+                return
+
             self._led.off()
         except Exception:
             pass
@@ -105,7 +113,7 @@ class HealthMonitorService:
         :param url: The ping URL (including UUID).
         """
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=PING_TIMEOUT_SECONDS) as client:
                 client.get(url)
         except httpx.RequestError as e:
             logger.warning(f"📡 Heartbeat Ping Failed: {e}")
