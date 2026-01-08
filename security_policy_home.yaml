@@ -1,0 +1,37 @@
+# 🏠 Home Security & Peace (Home Mode)
+
+feature_extractor:
+  use_tflite: true
+  model_path_lite: "src/yamnet/yamnet.tflite"
+  inference_interval_ms: 975
+
+reporting:
+  days_to_report: 30
+  limits:
+    day_db: 60.0
+    night_db: 50.0
+  category_mapping:
+    "Speech": "Conversation"
+    "Music": "Nuisance"
+
+policies:
+  - name: "Critical Intrusion"
+    description: "Detects break-in sounds regardless of privacy mode."
+    condition: "current_event_label in ['Glass', 'Shatter', 'Gunshot', 'Explosion'] and current_confidence > 0.6"
+    actions: 
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Suspicious Activity (Night)"
+    description: "Alerts on knocks or footsteps only during sleeping hours."
+    condition: "current_event_label in ['Knock', 'Door', 'Footsteps'] and is_night_time == true and current_confidence > 0.7"
+    actions:
+      - "telegram_alert"
+      - "cloud_upload"
+
+  - name: "Dog Bark Monitor"
+    description: "Logs barking for dispute resolution, only alerts if continuous/confident."
+    condition: "current_event_label in ['Dog', 'Bark'] and current_confidence > 0.8"
+    actions:
+      - "log_metadata"

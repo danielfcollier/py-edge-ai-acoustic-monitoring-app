@@ -2,8 +2,6 @@
 
 This document organizes common Raspberry Pi commands by function, provides essential troubleshooting tools, and includes scripts for remote access and hardware control.
 
-*Disclaimer: This guide was prepared with the assistance of Google Gemini 2.5 Pro.*
-
 
 htop
 sox
