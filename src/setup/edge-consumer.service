@@ -1,0 +1,26 @@
+[Unit]
+Description=Edge Audio Consumer (ZMQ -> Analysis)
+After=edge-producer.service
+
+[Service]
+Type=simple
+User={user}
+Group={group}
+WorkingDirectory={working_dir}
+Environment="PATH={venv_bin}:$PATH"
+Environment="TF_CPP_MIN_LOG_LEVEL=3"
+
+# Consumer Mode: Receives & Analyzes
+# Assumes localhost for distributed mode on same device. 
+# For multi-device, change --zmq-host in a custom config or arg.
+ExecStart={venv_bin}/edge-monitor --config {config_path} --env {env_path} --run-mode consumer --zmq-host 127.0.0.1 --zmq-port 5555
+
+# Standard Priority
+CPUSchedulingPolicy=other
+Nice=0
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
