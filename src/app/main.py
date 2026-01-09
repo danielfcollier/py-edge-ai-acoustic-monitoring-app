@@ -62,6 +62,7 @@ def ensure_models_present():
 
 
 def main():
+    # App Configuration
     args, unknown = parse_cli_args()
 
     if args.help:
@@ -81,8 +82,10 @@ def main():
 
     app_config = setup_calibration(base_args)
 
+    # Initialization
     logger.info(f"🚀 Initializing in [{app_config.run_mode.upper()}] mode")
 
+    # Services Layer
     services = []
 
     health_monitor = HealthMonitorService()
@@ -94,6 +97,7 @@ def main():
         uploader.start()
         services.append(uploader)
 
+    # Sinks Layer
     context = PipelineContext()
     pipeline = AudioPipeline()
 
@@ -101,6 +105,7 @@ def main():
     pipeline.add_sink(PolicyEngineSink(context))
     pipeline.add_sink(SmartRecorderSink(context))
 
+    # Application Run
     app = AudioBaseApp(app_config=app_config, pipeline=pipeline)
 
     try:
