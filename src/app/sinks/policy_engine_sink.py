@@ -86,7 +86,7 @@ class PolicyEngineSink(AudioSink):
         logger.debug(
             f"🔍 EVAL CONTEXT | Time: {current_hour}h ({'Night' if is_night else 'Day'}) | "
             f"Label: '{eval_scope['current_event_label']}' ({eval_scope['current_confidence']:.2f}) | "
-            f"dB: {eval_scope['metrics'].get('dbspl', 0):.1f}"
+            f"dB: {eval_scope['metrics'].get('dBSPL', 0):.1f}"
         )
 
         current_time = time.time()

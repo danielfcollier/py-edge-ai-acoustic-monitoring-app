@@ -176,7 +176,7 @@ class FeatureExtractorSink(AudioSink):
         # Publish basic metrics to Context
         self._context.metrics["rms"] = rms
         self._context.metrics["flux"] = flux
-        self._context.metrics["dbspl"] = 0.0  # Default/Floor
+        self._context.metrics["dBSPL"] = 0.0  # Default/Floor
 
         # SAD Stage 1: Noise Gate
         # Is it Loud (RMS) OR Sudden (Flux)?
@@ -187,24 +187,24 @@ class FeatureExtractorSink(AudioSink):
             return
 
         # 3. Stage 2: Precision Physics (Expensive & Calibrated)
-        dbspl = 0.0
+        dBSPL = 0.0
         if self._mic_sensitivity is not None and self._ref_dbspl is not None:
-            dbfs = AudioMetrics.dBFS(audio_chunk)
-            dbspl = AudioMetrics.dBSPL(dbfs, self._mic_sensitivity, self._ref_dbspl)
+            dBFS = AudioMetrics.dBFS(audio_chunk)
+            dBSPL = AudioMetrics.dBSPL(dBFS, self._mic_sensitivity, self._ref_dbspl)
 
             # SAD Stage 2: SPL Filter
-            if dbspl < self._sad_threshold_dbspl:
-                self._handle_silence(dbspl_val=dbspl, rms_val=rms)
+            if dBSPL < self._sad_threshold_dbspl:
+                self._handle_silence(dbspl_val=dBSPL, rms_val=rms)
                 return
 
             # Update Context with valid SPL
-            self._context.metrics["dbspl"] = dbspl
+            self._context.metrics["dBSPL"] = dBSPL
         else:
             # Uncalibrated: Skip SAD Stage 2 and SPL calculation
             pass
 
         # 4. Update Prometheus (Active State)
-        self._metrics.update_audio(dbspl if dbspl > 0 else DBSPL_SILENCE_LEVEL, rms)
+        self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms)
 
         # 5. Accumulate for AI Inference
         self._raw_buffer.append(audio_chunk)
@@ -287,11 +287,11 @@ class FeatureExtractorSink(AudioSink):
         if confidence > self._logging_threshold:
             rms = self._context.metrics["rms"]
             flux = self._context.metrics["flux"]
-            dbspl = self._context.metrics["dbspl"]
+            dBSPL = self._context.metrics["dBSPL"]
 
-            if dbspl > 0:
+            if dBSPL > 0:
                 logger.info(
-                    f"rms={rms:.4f} flux={flux:05.1f} dbspl={dbspl:05.1f} | 👂 Heard: {label} ({confidence:.2f})"
+                    f"rms={rms:.4f} flux={flux:05.1f} dBSPL={dBSPL:05.1f} | 👂 Heard: {label} ({confidence:.2f})"
                 )
             else:
                 logger.info(f"rms={rms:.4f} flux={flux:05.1f} | 👂 Heard: {label} ({confidence:.2f})")
