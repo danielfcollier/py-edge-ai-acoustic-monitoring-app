@@ -528,6 +528,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "resampy" },
     { name = "rule-engine" },
+    { name = "scipy" },
     { name = "tensorflow" },
     { name = "tensorflow-hub" },
     { name = "tflite-runtime" },
@@ -570,10 +571,11 @@ requires-dist = [
     { name = "resampy", specifier = ">=0.4.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "~=0.14.1" },
     { name = "rule-engine", specifier = ">=4.5.3" },
+    { name = "scipy", specifier = ">=1.16.3" },
     { name = "tensorflow", specifier = ">=2.16.0" },
     { name = "tensorflow-hub", specifier = ">=0.16.1" },
     { name = "tflite-runtime", specifier = ">=2.14.0" },
-    { name = "umik-base-app", specifier = ">=0.3.1a1.dev0" },
+    { name = "umik-base-app", specifier = ">=0.4.3a1.dev0" },
 ]
 provides-extras = ["dev"]
 
@@ -2882,7 +2884,7 @@ wheels = [
 
 [[package]]
 name = "umik-base-app"
-version = "0.4.0a1.dev0"
+version = "0.4.3a1.dev0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "librosa" },
@@ -2899,9 +2901,9 @@ dependencies = [
     { name = "scipy" },
     { name = "sounddevice" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/23/9c/f2c6e495af9da3e99840926cc585e2d66bdee4aee384132dc1161fdca649/umik_base_app-0.4.0a1.dev0.tar.gz", hash = "sha256:e25d93cc4aed7c07708b66a9848675d32da2ec2eb215b63093cd93bc1404ef43", size = 1079753, upload-time = "2026-01-02T01:18:49.483Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/d2/19348d01a4da628a90f4c5851f2431996296c126202ec883a622b4369894/umik_base_app-0.4.3a1.dev0.tar.gz", hash = "sha256:e786446f0743860acafe4ffbd73dd44ffa06c1eb41b71380c0d6c961ef5c6f5a", size = 1203442, upload-time = "2026-01-09T22:54:04.773Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/20/e0fd85751515699ead112e9d10f387d907c327535b478a4ac1770bea220f/umik_base_app-0.4.0a1.dev0-py3-none-any.whl", hash = "sha256:ec67ee35ba94599444a6c6a8fbd24e0a4b3fca9c46c4ec8363886e46be67615c", size = 81315, upload-time = "2026-01-02T01:18:50.994Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/7d/bd923265010f5070ac79a126514a22558a0f760ec4e43d047b98b737b592/umik_base_app-0.4.3a1.dev0-py3-none-any.whl", hash = "sha256:a012fe75725529ee3fd448dc0c8c4d95ae57b4a4a9a834e416ee592e5c79b563", size = 82256, upload-time = "2026-01-09T22:54:07.338Z" },
 ]
 
 [[package]]

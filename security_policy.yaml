@@ -8,6 +8,8 @@ variables:
 
   # Hardware Calibration
   calibration_file_path: "src/umik-1/7175488.txt"
+  # Override this on your Pi to point to USB drive if needed
+  # output_path: "/mnt/usb_storage/recordings" 
 
 # --- Hardware Configuration ---
 hardware:
@@ -16,6 +18,9 @@ hardware:
 # --- System Services Configuration ---
 services:
   internet_enabled: true
+  
+  # Control Variable for Storage
+  recording_output_path: "recordings" 
   
   # Health Monitoring
   heartbeat_interval_seconds: 60

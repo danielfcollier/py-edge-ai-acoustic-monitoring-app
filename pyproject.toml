@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "umik-base-app>=0.3.1a1.dev0",
+    "umik-base-app>=0.4.3a1.dev0",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
@@ -26,6 +26,7 @@ dependencies = [
     "google-cloud-storage>=3.7.0",
     "prometheus-client>=0.17.1",
     "python-dotenv>=1.2.1",
+    "scipy>=1.16.3",
 ]
 
 [project.urls]
