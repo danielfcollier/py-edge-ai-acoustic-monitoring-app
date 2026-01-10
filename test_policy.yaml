@@ -1,77 +1,117 @@
 # test_policy.yaml
 #
-#  edge-monitor --config test_policy.yaml
+#  uv edge-monitor-run --config test_policy.yaml
 
-# --- 1. System Services ---
+# --- Global Variables ---
+# Define your constants here. They will be injected into the settings below.
+variables:
+  day_start: 6        # 06:00 AM
+  night_start: 22     # 10:00 PM
+  day_limit: 60.0     # Decibel limit for Day
+  night_limit: 50.0   # Decibel limit for Night
+
+  # Hardware Calibration
+  calibration_file_path: "src/umik-1/7175488.txt"
+  # Override this on your Pi to point to USB drive if needed
+  # output_path: "/mnt/usb_storage/recordings" 
+
+# --- Hardware Configuration ---
+hardware:
+  calibration_file: "{calibration_file_path}"
+
+# --- System Services Configuration ---
 services:
-  # Disable heavy services for testing if you want
   internet_enabled: true
-  telegram_enabled: true 
-  cloud_storage_enabled: true
   
-  # Set Cooldown to 0 so you can rapid-fire test events
-  alert_cooldown_seconds: 5 
+  # Control Variable for Storage
+  recording_output_path: "recordings" 
   
-  # Time settings (irrelevant for these tests, but required by schema)
-  day_start_hour: 6
-  night_start_hour: 22
+  # Health Monitoring
+  heartbeat_interval_seconds: 60
+  gpio_heartbeat_pin: 17
+  hc_ping_url: "{HC_PING_URL}"
 
+  # Cloud & Notifications
+  telegram_enabled: true
+  cloud_storage_enabled: true
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  alert_cooldown_seconds: 60
+
+  # These values are injected from the variables block above
+  day_start_hour: "{day_start}"
+  night_start_hour: "{night_start}"
+  
+  # Cloud Provider Settings
   cloud:
     provider: "magalu"
     bucket_name: "acoustic-logs"
 
-# --- 2. AI Configuration (High Sensitivity) ---
+# --- AI Model Configuration ---
 feature_extractor:
-  use_tflite: false
-  model_path_lite: "src/yamnet/yamnet.tflite"
-  model_path_full: "src/yamnet/model"
-  class_map_path: "src/yamnet/class_map/yamnet_class_map.csv"
-  
-  inference_interval_ms: 975
-  target_sample_rate: 16000
-  
-  # LOWER THESE for testing so it picks up even quiet snaps
-  sad_threshold_rms: 0.0005 
-  sad_threshold_flux: 1.0   
-  sad_threshold_dbspl: 35.0 
+  use_tflite: false 
 
-# --- 3. Reporting ---
+  sad_threshold_rms: 0.002
+  sad_threshold_flux: 5.0
+  sad_threshold_dbspl: 45.0
+
+# --- Reporting & Analysis Configuration ---
 reporting:
   days_to_report: 30
-  category_mapping: {}
+  
+  limits:
+    day_db: "{day_limit}"
+    night_db: "{night_limit}"
+  
+  category_mapping:
+    "intruder_alert": "Security"
+    "help_shout": "Security"
+    "glass_break_verified": "Security"
+    "Speech": "Vocals"
+    "Narration": "Vocals"
+    "Music": "Nuisance"
+    "Musical_instrument": "Nuisance"
+    "Domestic_animals": "Nature"
 
 # --- 4. Test Policies ---
 policies:
-  - name: "TEST: Hand Clapping"
-    description: "Detects clapping (Percussive + Class)."
-    # 'Clapping' is class ID 60 in YAMNet
+  # 1. TEST RECORDING & UPLOAD (Trigger: Clap your hands)
+  # This tests:
+  #   - Pre-roll buffering (did it catch the start of the clap?)
+  #   - WAV file creation
+  #   - S3/Magalu Upload
+  - name: "TEST: Cloud Upload Chain"
+    description: "Clap hands to test full recording and upload pipeline."
+    # Clapping is usually Class 60. Confidence > 0.4 filters out noise.
     condition: "current_event_label == 'Clapping' and current_confidence > 0.4"
     actions: 
-      - "log_metadata"
-      - "record_evidence" # Verify pre-roll works
+      - "record_evidence"  # Creates the WAV
+      - "cloud_upload"     # Sends to Magalu/S3
+    ignore_privacy: true
 
-  - name: "TEST: Finger Snapping"
-    description: "Detects snapping (High Flux, low volume)."
-    # 'Finger snapping' is class ID 62
-    condition: "current_event_label == 'Finger snapping'"
+  # 2. TEST TELEGRAM (Trigger: Speak/Shout)
+  # This tests:
+  #   - Bot connectivity
+  #   - Message formatting (check if dBSPL appears in the msg)
+  #   - Retry logic (if you disconnect wifi briefly)
+  - name: "TEST: Telegram Alert"
+    description: "Speak loudly to test Telegram notification."
+    # 'Speech' or 'Narration' are common YAMNet classes for talking.
+    condition: "current_event_label in ['Speech', 'Narration'] and current_confidence > 0.6"
+    actions: 
+      - "telegram_alert"
+      - "log_metadata"    # Verifies the event was seen in local logs
+    ignore_privacy: true
+
+  # 3. TEST PHYSICS / CALIBRATION (Trigger: Snap fingers close to mic)
+  # This tests:
+  #   - Spectral Flux (Sudden changes)
+  #   - dBSPL thresholds
+  - name: "TEST: Physics Trigger"
+    description: "Snap fingers to test pure physics triggers (no AI dependency)."
+    # Flux > 10 captures sharp transients like snaps/knocks.
+    # dBSPL > 60 ensures it's not background noise.
+    condition: "metrics['flux'] > 10.0 or metrics['dbspl'] > 60.0"
     actions: 
       - "log_metadata"
-
-  - name: "TEST: Voice Activation"
-    description: "Detects speech."
-    condition: "current_event_label in ['Speech', 'Narration', 'Yell']"
-    actions: 
-      - "log_metadata"
-
-  - name: "TEST: Physics Trigger (Flux)"
-    description: "Detects ANY sudden sound (Flux) regardless of AI label."
-    # Great for testing if the SAD Gate is working
-    condition: "metrics['flux'] > 10.0"
-    actions: 
-      - "log_metadata"
-
-  - name: "TEST: Physics Trigger (Loudness)"
-    description: "Detects loud shouting."
-    condition: "metrics['dbspl'] > 80.0"
-    actions: 
-      - "log_metadata"
+    ignore_privacy: true

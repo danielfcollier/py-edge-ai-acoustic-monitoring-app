@@ -34,10 +34,13 @@ class HealthMonitorService:
         """
         Initializes the Health Monitor.
         Sets up GPIO if running on a compatible device (Raspberry Pi).
+        Initializes a reusable HTTP client for healthchecks.
         """
         self._config = settings.CONFIG.services
         self._stop_event = threading.Event()
         self._led = None
+
+        self._http_client = httpx.Client(timeout=PING_TIMEOUT_SECONDS)
 
         # GPIO Setup (Raspberry Pi Specific)
         try:
@@ -56,8 +59,14 @@ class HealthMonitorService:
         logger.info("💓 Health Monitor Started.")
 
     def stop(self):
-        """Stops the worker thread and cleans up GPIO resources."""
+        """Stops the worker thread, closes HTTP client, and cleans up GPIO resources."""
         self._stop_event.set()
+
+        try:
+            self._http_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing HTTP client: {e}")
+
         if self._led:
             self._led.close()
 
@@ -113,7 +122,6 @@ class HealthMonitorService:
         :param url: The ping URL (including UUID).
         """
         try:
-            with httpx.Client(timeout=PING_TIMEOUT_SECONDS) as client:
-                client.get(url)
+            self._http_client.get(url)
         except httpx.RequestError as e:
             logger.warning(f"📡 Heartbeat Ping Failed: {e}")

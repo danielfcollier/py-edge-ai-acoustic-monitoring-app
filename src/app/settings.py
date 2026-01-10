@@ -20,7 +20,70 @@ from pydantic import BaseModel, Field
 from pydantic_settings import SettingsConfigDict
 from umik_base_app.settings import Settings as BaseSettings
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 logger = logging.getLogger(__name__)
+
+
+# --- System Metrics Utility ---
+
+
+class SystemMetrics:
+    """Helper to retrieve hardware telemetry (CPU, RAM, Temp, Core ROM, Attached ROM)."""
+
+    @staticmethod
+    def get_stats() -> tuple[float, float, float, float, float, float]:
+        """
+        Returns a tuple of (cpu_percent, ram_percent, temp_celsius, disk_percent, disk_attached_percent).
+        Handles missing libraries or sensors gracefully.
+        """
+        cpu = 0.0
+        ram = 0.0
+        temp = 0.0
+        disk = 0.0
+        disk_attached = 0.0
+
+        if psutil:
+            # CPU: interval=None makes it non-blocking (returns since last call)
+            cpu = psutil.cpu_percent(interval=None)
+
+            # RAM
+            ram = psutil.virtual_memory().percent
+
+            # Disk Usage for Root Partition (SD Card) and Attached Disk (USB SSD)
+            try:
+                disk = psutil.disk_usage("/").percent
+                disk_attached = psutil.disk_usage("/").percent
+            except Exception:
+                disk = 0.0
+                disk_attached = 0.0
+
+            # Temperature: Try standard sensors first
+            try:
+                temps = psutil.sensors_temperatures()
+                # 'cpu_thermal' is standard for Raspberry Pi
+                if "cpu_thermal" in temps:
+                    temp = temps["cpu_thermal"][0].current
+                # 'coretemp' is common on Intel Linux
+                elif "coretemp" in temps:
+                    temp = temps["coretemp"][0].current
+            except Exception:
+                pass
+
+        # Fallback: Read thermal zone file directly (Linux/RPi specific)
+        if temp == 0.0:
+            try:
+                if os.path.exists("/sys/class/thermal/thermal_zone0/temp"):
+                    with open("/sys/class/thermal/thermal_zone0/temp") as f:
+                        # Value is usually in millidegrees
+                        temp = float(f.read().strip()) / 1000.0
+            except Exception:
+                pass
+
+        return cpu, ram, temp, disk, disk_attached
 
 
 # --- YAML Schema Models (Logic Only) ---
@@ -47,10 +110,11 @@ class PolicyRule(BaseModel):
 
 class FeatureExtractorConfig(BaseModel):
     use_tflite: bool = True
-    force_cpu: bool = True
     model_path_lite: str = "src/yamnet/yamnet.tflite"
     model_path_full: str = "src/yamnet/model"
     class_map_path: str = "src/yamnet/class_map/yamnet_class_map.csv"
+
+    force_cpu: bool = True
 
     # Audio Processing Constants
     inference_interval_ms: int = 975
@@ -83,6 +147,12 @@ class ServiceConfig(BaseModel):
     internet_enabled: bool = True
     telegram_enabled: bool = True
     cloud_storage_enabled: bool = True
+
+    # 🆕 Recorder Logic: Save Calibrated (Heavy) or Raw (Light)
+    save_calibrated_wave: bool = False
+
+    # 🆕 Storage Path (Default: ./recordings)
+    recording_output_path: Path = Path("recordings")
 
     # Operational Settings
     retry_attempts: int = 3
@@ -133,7 +203,6 @@ class AppSettings(BaseSettings):
     LOG_LEVEL_POLICY_ENGINE: str = "DEBUG"
     LOG_LEVEL_FEATURE_EXTRACTOR: str = "DEBUG"
     LOG_LEVEL_SMART_RECORDER: str = "DEBUG"
-
     LOG_LEVEL_TELEGRAM: str = "INFO"
     LOG_LEVEL_SERVICES: str = "INFO"
 
@@ -225,12 +294,6 @@ class AppSettings(BaseSettings):
         if svcs.telegram_enabled and (not self.TELEGRAM_BOT_TOKEN or not self.TELEGRAM_CHAT_ID):
             logger.warning("⚠️ Telegram credentials missing. Disabling Telegram Service.")
             svcs.telegram_enabled = False
-
-        if svcs.cloud_storage_enabled and svcs.cloud.provider == "magalu":
-            if not self.MAGALU_ACCESS_KEY or not self.MAGALU_SECRET_KEY:
-                if not svcs.cloud.aws_access_key or not svcs.cloud.aws_secret_key:
-                    logger.warning("⚠️ Magalu/S3 credentials missing. Disabling Cloud Upload.")
-                    svcs.cloud_storage_enabled = False
 
 
 @lru_cache

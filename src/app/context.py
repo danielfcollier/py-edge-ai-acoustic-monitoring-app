@@ -6,37 +6,31 @@ GitHub: https://github.com/danielfcollier
 Year: 2026
 """
 
-from collections import deque
+import collections
 from dataclasses import dataclass, field
-
-import numpy as np
+from typing import Any
 
 
 @dataclass
 class PipelineContext:
     """
-    Holds the state for a single processing cycle and shared buffers.
-    Injected into every Sink.
+    Shared state passed between Sinks in the Pipeline.
+    Acts as the 'Bus' for data moving between Analysis, Policy, and Action stages.
     """
 
-    # --- Per-Chunk State (Reset every cycle) ---
-    current_event_label: str | None = None
+    # --- Audio Buffers ---
+    # Stores raw audio chunks (numpy arrays) for pre-roll context.
+    # Maxlen 50 @ 0.1s/chunk = ~5 seconds of pre-roll history.
+    audio_pre_buffer: Any = field(default_factory=lambda: collections.deque(maxlen=50))
+
+    # --- Inference State ---
+    current_event_label: str = "Silence"
     current_confidence: float = 0.0
+    should_infer: bool = True
 
-    # Policy decisions (e.g., ["telegram_alert", "cloud_upload"])
+    # --- Metrics State ---
+    metrics: dict[str, float] = field(default_factory=dict)
+
+    # --- Policy Decisions ---
+    # e.g. ["cloud_upload", "record_evidence", "blink_led"]
     actions_to_take: list[str] = field(default_factory=list)
-
-    # Audio metrics (RMS, dBFS, Flux)
-    metrics: dict = field(default_factory=dict)
-
-    # --- Shared Buffers (Persist across cycles) ---
-    # Stores last N chunks of raw audio for pre-roll
-    audio_pre_buffer: deque = field(default_factory=lambda: deque(maxlen=100))
-
-    # Accumulates 32-bit audio for recording
-    recording_buffer: list[np.ndarray] = field(default_factory=list)
-    is_recording: bool = False
-
-    # --- System Flags ---
-    privacy_mode_active: bool = False
-    is_night_time: bool = False

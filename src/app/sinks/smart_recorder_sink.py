@@ -1,7 +1,12 @@
 """
 Smart Recorder Sink.
-Saves audio recordings to disk and logs metadata/metrics to a CSV buffer.
-Supports calibrated SPL calculation if available.
+The "Executor" of the pipeline with Optional Calibration Capability.
+- Responsibilities: Buffer management, CSV logging, Audio Bundling.
+- Features:
+    - Pre-roll/Post-roll buffering.
+    - Integrated Calibration (Gain + FIR) via Feature Flag.
+    - Incremental Processing: Calibrates audio on-the-fly to avoid CPU spikes.
+    - Queue Handoff (No blocking Disk IO for WAVs).
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
@@ -10,211 +15,261 @@ Year: 2026
 
 import csv
 import logging
+import queue
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import psutil
-from scipy.io import wavfile
 from umik_base_app import AudioSink
+from umik_base_app.transformers.calibrator_transformer import CalibratorTransformer
 
 from ..context import PipelineContext
-from ..settings import settings
+from ..settings import SystemMetrics, settings
 
 logger = logging.getLogger(__name__)
 
 
+RECORDING_MAX_SECONDS = 60
+RECORDING_POST_ROLL_OUT_SECONDS = 10
+METRICS_CSV_BUFFER_FILE = "metrics_buffer.csv"
+
+UMIK1_NOMINAL_SENSITIVITY_DBFS = 0
+UMIK1_REFERENCE_DBSPL = 94
+CALIBRATION_FIR_NUM_TAPS = 1024
+
+
 class SmartRecorderSink(AudioSink):
     """
-    Records audio clips based on Policy Engine triggers.
-    Includes pre-roll audio, system metrics, and calibrated SPL logging.
+    State-machine based recorder.
+    It decides *how* to record (Pre-roll, Post-roll, Metadata aggregation).
+    If 'save_calibrated_wave' is True, it applies Gain and FIR incrementally.
     """
 
-    def __init__(self, context: PipelineContext):
+    def __init__(self, context: PipelineContext, upload_queue: queue.Queue):
+        """
+        :param context: Shared pipeline context.
+        :param upload_queue: Thread-safe queue to push finished EventObjects to.
+        """
         self._context = context
+        self._upload_queue = upload_queue
         self._sample_rate = int(settings.AUDIO.SAMPLE_RATE)
-        self._output_dir = Path("recordings")
-        self._output_dir.mkdir(exist_ok=True)
 
-        # CSV Configuration
-        self._csv_path = self._output_dir / "metrics_buffer.csv"
-        self._ensure_csv_header()
+        # Configuration
+        self._config = settings.CONFIG.services
+        self._output_dir = self._config.recording_output_path
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._csv_path = Path(self._output_dir, METRICS_CSV_BUFFER_FILE)
 
-        # Recording Configuration
-        self._silence_timeout = 10.0
-        self._max_duration = 60.0
+        # Calibration Settings
+        self._save_calibrated = self._config.save_calibrated_wave
+        self._calibrator = None
 
-        # State Initialization
+        if self._save_calibrated:
+            self._init_calibration_assets()
+
+        # Constraints
+        self._max_duration_sec = RECORDING_MAX_SECONDS
+        self._post_roll_sec = RECORDING_POST_ROLL_OUT_SECONDS
+
+        # State Machine
         self._is_recording = False
+        self._event_id = None
         self._start_time = 0.0
-        self._last_trigger_time = 0.0
-        self._recording_buffer = []
+        self._fade_start_time = 0.0
+        self._audio_buffer = []
 
-        # Metrics State
-        self._event_max_db = -90.0
-        self._event_max_conf = 0.0
-        self._detected_label = "Unknown"
-        self._minor_alerts = set()
-        
-        self._last_spectrum = None # For Flux calc
+        self._init_csv()
+        logger.info(f"💾 Smart Recorder Ready. Output: {self._output_dir} | Calibrated: {self._save_calibrated}")
 
-    def _ensure_csv_header(self):
-        """Creates the CSV with headers if it doesn't exist."""
-        if not self._csv_path.exists():
-            with open(self._csv_path, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    [
-                        "timestamp",
-                        "event_type",
-                        "confidence",
-                        "duration",
-                        "dbspl",
-                        "cpu_percent",
-                        "ram_percent",
-                        "temp_c",
-                    ]
-                )
-
-    def _get_system_metrics(self):
-        """Captures Pi system stats."""
-        cpu = psutil.cpu_percent()
-        ram = psutil.virtual_memory().percent
-        temp = 0.0
+    def _init_calibration_assets(self):
+        """
+        Loads Sensitivity and instantiates the CalibratorTransformer.
+        STRICT MODE: Raises exception if calibration fails to ensure data integrity.
+        """
         try:
-            temps = psutil.sensors_temperatures()
-            if "cpu_thermal" in temps:
-                temp = temps["cpu_thermal"][0].current
-        except Exception:
-            pass
-        return cpu, ram, temp
+            cal_file_path = settings.CONFIG.hardware.calibration_file
 
-    def handle_audio(self, audio_chunk: np.ndarray, timestamp) -> None:
-        # 1. Check for new Triggers
-        if "cloud_upload" in self._context.actions_to_take:
-            self._handle_trigger(time.time())
-        
-        flux, self._last_spectrum = calculate_flux(audio_chunk, self._last_spectrum)
-        # Store in Context so Policy Engine can see it
-        self._context.metrics['flux'] = flux
+            if not cal_file_path:
+                raise FileNotFoundError("Calibration file path not configured in settings.")
 
-        # 2. Process Recording State
-        if self._context.is_recording:
-            self._process_recording(audio_chunk, time.time())
+            self._calibrator = CalibratorTransformer(
+                calibration_file_path=cal_file_path,
+                sample_rate=self._sample_rate,
+                num_taps=CALIBRATION_FIR_NUM_TAPS,
+                nominal_sensitivity_dbfs=UMIK1_NOMINAL_SENSITIVITY_DBFS,
+                reference_dbspl=UMIK1_REFERENCE_DBSPL,
+            )
+            logger.info("🔊 Calibration Transformer loaded successfully.")
 
-    def _handle_trigger(self, now):
-        """Called when a relevant policy action is detected."""
-        label = self._context.current_event_label or "Unknown"
-        conf = self._context.current_confidence
-
-        if not self._context.is_recording:
-            logger.info(f"🔴 Event '{label}' started recording (with pre-roll).")
-            self._start_recording(now)
-
-        # Update Trigger State
-        self._last_trigger_time = now
-        self._detected_label = label  # Update label to most recent trigger
-        self._minor_alerts.add(label)
-        self._event_max_conf = max(self._event_max_conf, conf)
-
-    def _start_recording(self, now):
-        """Initialize recording state."""
-        self._context.is_recording = True
-        self._start_time = now
-        self._last_trigger_time = now
-
-        # Reset Metrics
-        self._event_max_db = -90.0
-        self._event_max_conf = 0.0
-        self._minor_alerts = set()
-        self._detected_label = self._context.current_event_label or "Unknown"
-
-        # Dump Pre-Roll Buffer
-        self._context.recording_buffer = list(self._context.audio_pre_buffer)
-
-    def _process_recording(self, audio_chunk, now):
-        """Accumulate audio, calculate real-time metrics, and check stop conditions."""
-        self._context.recording_buffer.append(audio_chunk)
-
-        # --- A. Metric Calculation ---
-        rms = np.sqrt(np.mean(audio_chunk**2))
-
-        # Check for Calibration Data (UMIK-1)
-        try:
-            sens = getattr(settings.AUDIO, "NOMINAL_SENSITIVITY_DBFS", None)
-            ref = getattr(settings.AUDIO, "REFERENCE_DBSPL", 94.0)
-
-            if sens is not None:
-                # Calibrated Calculation
-                dbfs = 20 * np.log10(rms + 1e-9)
-                dbspl = dbfs - sens + ref
-            else:
-                # Uncalibrated Fallback (Relative dBFS)
-                dbspl = 20 * np.log10(rms + 1e-9)
-        except AttributeError:
-            dbspl = 20 * np.log10(rms + 1e-9)
-
-        self._event_max_db = max(self._event_max_db, dbspl)
-        self._event_max_conf = max(self._event_max_conf, self._context.current_confidence)
-
-        if self._context.current_event_label:
-            self._minor_alerts.add(self._context.current_event_label)
-
-        # --- B. Stop Conditions ---
-        duration = now - self._start_time
-        silence_duration = now - self._last_trigger_time
-
-        if duration >= self._max_duration:
-            logger.info("⏹️ Max recording duration reached. Stopping.")
-            self._stop_and_save()
-        elif silence_duration >= self._silence_timeout:
-            logger.info(f"⏹️ Silence timeout ({self._silence_timeout}s). Stopping.")
-            self._stop_and_save()
-
-    def _stop_and_save(self):
-        """Flush buffer to disk and log metrics."""
-        if not self._context.recording_buffer:
-            self._context.is_recording = False
-            return
-
-        try:
-            # 1. Flatten Audio & Save WAV
-            full_audio = np.concatenate(self._context.recording_buffer)
-            timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            wav_filename = f"{timestamp_str}.wav"
-            wav_path = self._output_dir / wav_filename
-
-            wavfile.write(wav_path, self._sample_rate, full_audio)
-
-            # 2. Log Metrics to CSV
-            cpu, ram, temp = self._get_system_metrics()
-            duration = len(full_audio) / self._sample_rate
-
-            # If multiple events occurred, list them or pick the primary
-            # We use the label that triggered the recording or the most recent one
-
-            with open(self._csv_path, "a", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    [
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        self._detected_label,
-                        f"{self._event_max_conf:.2f}",
-                        f"{duration:.1f}",
-                        f"{self._event_max_db:.1f}",
-                        cpu,
-                        ram,
-                        temp,
-                    ]
-                )
-
-            logger.info(f"💾 Saved Recording: {wav_filename} ({duration:.1f}s)")
-            logger.info("📝 Logged event metrics to CSV.")
+        except (ValueError, FileNotFoundError, RuntimeError) as e:
+            # Recoverable errors: File missing, bad format, or empty data.
+            # Strategy: Disable calibration feature but allow app to continue.
+            logger.critical(f"❌ Calibration Setup Failed: {e}")
+            raise e
 
         except Exception as e:
-            logger.error(f"❌ Failed to save recording/metrics: {e}")
-        finally:
-            # Reset Global State
-            self._context.is_recording = False
-            self._context.recording_buffer = []
+            logger.error(f"❌ Unexpected Calibration Error: {e}", exc_info=True)
+            raise e
+
+    def _init_csv(self):
+        """Creates the CSV file with headers if it doesn't exist."""
+        if not self._csv_path.exists():
+            try:
+                with open(self._csv_path, "w", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(
+                        [
+                            "id",
+                            "timestamp",
+                            "label",
+                            "confidence",
+                            "rms",
+                            "dbspl",
+                            "flux",
+                            "cpu",
+                            "ram",
+                            "temp",
+                            "disk",
+                            "disk_attached",
+                        ]
+                    )
+            except Exception as e:
+                logger.error(f"Failed to initialize CSV: {e}")
+
+    def handle_audio(self, audio_chunk: np.ndarray, timestamp: float) -> None:
+        current_time = time.time()
+
+        triggers = ["record_evidence", "cloud_upload"]
+        is_triggered = any(action in self._context.actions_to_take for action in triggers)
+
+        # --- STATE MACHINE ---
+
+        if not self._is_recording:
+            if is_triggered:
+                self._start_recording(current_time)
+
+        else:
+            duration = current_time - self._start_time
+
+            # Manage Fade Out
+            if is_triggered:
+                self._fade_start_time = 0.0
+            elif self._fade_start_time == 0.0:
+                self._fade_start_time = current_time
+
+            # Check Stop Conditions
+            should_stop = False
+
+            if duration >= self._max_duration_sec:
+                logger.info("🛑 Max recording duration reached (60s).")
+                should_stop = True
+
+            elif self._fade_start_time > 0 and (current_time - self._fade_start_time) > self._post_roll_sec:
+                logger.info("🛑 Post-roll silence complete.")
+                should_stop = True
+
+            if should_stop:
+                self._stop_recording()
+                return
+
+            self._process_chunk(audio_chunk, current_time)
+
+    def _start_recording(self, now: float):
+        self._event_id = str(uuid.uuid4())
+        self._start_time = now
+        self._fade_start_time = 0.0
+        self._is_recording = True
+
+        raw_preroll_chunks = list(self._context.audio_pre_buffer)
+
+        if self._save_calibrated and self._calibrator:
+            self._calibrator.reset_state()
+
+            if raw_preroll_chunks:
+                full_raw_preroll = np.concatenate(raw_preroll_chunks)
+                calibrated_preroll = self._calibrator.apply(full_raw_preroll)
+
+                self._audio_buffer = [calibrated_preroll]
+            else:
+                self._audio_buffer = []
+        else:
+            self._audio_buffer = raw_preroll_chunks
+
+        logger.info(f"🔴 Recording Started [ID: {self._event_id[:8]}]")
+
+    def _process_chunk(self, chunk: np.ndarray, now: float):
+        if self._save_calibrated and self._calibrator:
+            processed_chunk = self._calibrator.apply(chunk)
+            self._audio_buffer.append(processed_chunk)
+        else:
+            self._audio_buffer.append(chunk)
+
+        # --- CSV LOGGING (On Raw Metrics) ---
+        metrics = self._context.metrics
+        rms = metrics.get("rms", 0.0)
+        dbspl = metrics.get("dbspl", 0.0)
+        flux = metrics.get("flux", 0.0)
+
+        label = self._context.current_event_label
+        conf = self._context.current_confidence
+
+        cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
+
+        row = [
+            self._event_id,
+            datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            label,
+            f"{conf:.2f}",
+            f"{rms:.4f}",
+            f"{dbspl:.1f}",
+            f"{flux:.1f}",
+            f"{cpu:.1f}",
+            f"{ram:.1f}",
+            f"{temp:.1f}",
+            f"{disk:.1f}",
+            f"{disk_attached:.1f}",
+        ]
+
+        self._write_csv(row)
+
+    def _write_csv(self, row):
+        try:
+            with open(self._csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(row)
+        except Exception:
+            pass
+
+    def _stop_recording(self):
+        if not self._audio_buffer:
+            self._is_recording = False
+            return
+
+        full_audio = np.concatenate(self._audio_buffer)
+        duration = len(full_audio) / self._sample_rate
+
+        event_object = {
+            "uuid": self._event_id,
+            "timestamp": datetime.now().isoformat(),
+            "duration_sec": duration,
+            "sample_rate": self._sample_rate,
+            "audio_data": full_audio,
+            "metadata": {
+                "label": self._context.current_event_label,
+                "confidence": self._context.current_confidence,
+                "calibrated": self._save_calibrated,
+            },
+        }
+
+        try:
+            self._upload_queue.put(event_object, block=False)
+            logger.info(f"📦 Event Bundled & Queued | Dur: {duration:.1f}s]")
+        except queue.Full:
+            logger.error("❌ Upload Queue Full! Dropping recording event.")
+
+        # Cleanup
+        self._is_recording = False
+        self._audio_buffer = []
+        self._event_id = None

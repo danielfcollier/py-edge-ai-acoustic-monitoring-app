@@ -19,8 +19,8 @@ from umik_base_app import AudioSink
 from umik_base_app.core.audio_metrics import AudioMetrics
 
 from ..context import PipelineContext
-from ..services.metrics_service import MetricsService
-from ..settings import settings
+from ..services.prometheus_service import PrometheusService
+from ..settings import FeatureExtractorConfig, settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ class FeatureExtractorSink(AudioSink):
         :param context: The shared PipelineContext to update with metrics/inference.
         """
         self._context = context
-        self._config = settings.CONFIG.feature_extractor
+        self._config: FeatureExtractorConfig = settings.CONFIG.feature_extractor
 
         # Services & Resources
-        self._metrics = MetricsService()
+        self._metrics = PrometheusService()
         self._classes = []
         self._model = None
 
@@ -204,7 +204,7 @@ class FeatureExtractorSink(AudioSink):
             pass
 
         # 4. Update Prometheus (Active State)
-        self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms)
+        self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms, flux)
 
         # 5. Accumulate for AI Inference
         self._raw_buffer.append(audio_chunk)
@@ -226,7 +226,7 @@ class FeatureExtractorSink(AudioSink):
         self._raw_buffer = []
 
         # Live Monitors (Needle drops to floor/value)
-        self._metrics.update_audio(dbspl_val, rms_val)
+        self._metrics.update_audio(dbspl_val, rms_val, 0.0)
         self._metrics.update_ai_status("Silence", 0.0)
 
     def _process_inference_batch(self):
