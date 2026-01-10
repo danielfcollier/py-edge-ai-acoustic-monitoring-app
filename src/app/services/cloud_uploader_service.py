@@ -1,197 +1,297 @@
 """
 Cloud Uploader Service.
-Uploads WAVs and triggers Telegram notifications using metadata.
+Hybrid Worker:
+1. Online: Streams audio RAM -> Cloud (S3/Magalu) with Metadata Headers.
+2. Offline: Spills audio RAM -> Disk (DLQ).
+3. Background: Rotates CSV logs and retries failed uploads.
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
 Year: 2026
 """
 
-import json
+import io
 import logging
+import queue
 import shutil
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
+from scipy.io import wavfile
+
 from ..settings import settings
-from .cloud_storage_providers import GCPStorageProvider, S3Provider
+from .cloud_storage_providers import S3Provider
 from .telegram_bot_client import TelegramBotClient
 
 logger = logging.getLogger(__name__)
 
+# --- Configuration Constants ---
+METRICS_CSV_BUFFER_FILE = "metrics_buffer.csv"
+CSV_ROTATION_SIZE_MB = 1.0
+CSV_ROTATION_AGE_SECONDS = 24 * 3600  # 24 Hours
+
+# --- Interval Constants ---
+WORKER_TIMEOUT_SECONDS = 1.0
+CSV_CHECK_INTERVAL_SECONDS = 10
+RETRY_INTERVAL_SECONDS = 60
+
+# --- File & Path Templates ---
+FILENAME_OFFLINE_RECORDING = "evidence_{uuid}_{label}.wav"
+FILENAME_ROTATED_CSV = "metrics_{timestamp}.csv"
+
+# --- Cloud Key Templates ---
+S3_KEY_RECORDING = "recordings/evidence_{uuid}.wav"
+S3_KEY_METRICS = "metrics/{filename}"
+
 
 class CloudUploaderService:
-    def __init__(self):
-        self._stop_event = threading.Event()
-        self._recordings_dir = Path("recordings")
+    """
+    Manages the reliable upload of audio evidence and system metrics to cloud storage.
+    Implements a hybrid online/offline strategy with automatic retries for resilience.
+    """
+
+    def __init__(self, upload_queue: queue.Queue, output_path: Path):
+        """
+        Initialize the uploader service.
+
+        :param upload_queue: Queue receiving 'EventObjects' (dicts) from the Recorder Sink.
+        :param output_path: Local directory path for buffering offline files and CSV logs.
+        """
+        self._queue = upload_queue
+        self._recordings_dir = output_path
         self._config = settings.CONFIG.services
         self._cloud_cfg = self._config.cloud
 
-        # Services
+        self._stop_event = threading.Event()
         self._telegram = TelegramBotClient()
-
         self._provider = self._init_provider()
 
-    def _init_provider(self):
-        """Initializes the correct provider based on settings."""
-        cfg = self._cloud_cfg
+        self._recordings_dir.mkdir(parents=True, exist_ok=True)
 
+    def _init_provider(self):
+        """
+        Initializes the appropriate cloud storage provider (AWS or Magalu) based on settings.
+        """
+        cfg = self._cloud_cfg
         if cfg.provider == "magalu":
-            logger.info("☁️ Using Magalu Cloud (S3 Compatible)")
+            logger.info("☁️  Using Magalu Cloud (S3 Compatible)")
             return S3Provider(
                 access_key=settings.MAGALU_ACCESS_KEY or cfg.aws_access_key,
                 secret_key=settings.MAGALU_SECRET_KEY or cfg.aws_secret_key,
                 bucket_name=cfg.bucket_name,
                 endpoint_url="https://s3.magaluobjects.com",
             )
-
         elif cfg.provider == "aws":
-            logger.info("☁️ Using AWS S3")
+            logger.info("☁️  Using AWS S3")
             return S3Provider(
                 access_key=cfg.aws_access_key,
                 secret_key=cfg.aws_secret_key,
                 bucket_name=cfg.bucket_name,
                 region=cfg.aws_region,
             )
-
-        elif cfg.provider == "gcp":
-            logger.info("☁️ Using Google Cloud Storage")
-            return GCPStorageProvider(credentials_path=cfg.gcp_credentials_path, bucket_name=cfg.bucket_name)
-
         return None
 
     def start(self):
-        threading.Thread(target=self._worker, name="CloudUploader", daemon=True).start()
-        logger.info("☁️ Cloud Uploader Started.")
+        """Spawns the background worker threads."""
+        threading.Thread(target=self._stream_worker, name="UploaderStream", daemon=True).start()
+        threading.Thread(target=self._csv_batch_worker, name="UploaderCSV", daemon=True).start()
+        threading.Thread(target=self._retry_worker, name="UploaderRetry", daemon=True).start()
+        logger.info(f"☁️ Cloud Uploader Started. Storage: {self._recordings_dir}")
 
     def stop(self):
+        """Signals all workers to stop."""
         self._stop_event.set()
 
-    def _worker(self):
-        csv_path = self._recordings_dir / "metrics_buffer.csv"
-        last_upload_time = time.time()
-        upload_interval = 24 * 60 * 60  # 24 Hours
-        row_limit = 1000
-
-        self._enforce_disk_limits()
-
+    def _stream_worker(self):
+        """
+        Main loop: Consumes audio events from the queue.
+        Attempts direct cloud upload; falls back to disk if offline or failed.
+        """
         while not self._stop_event.is_set():
-            # 1. Process Recordings (WAV + JSON)
-            meta_files = sorted(list(self._recordings_dir.glob("*.json")))
-
-            for meta_path in meta_files:
-                if self._stop_event.is_set():
-                    break
-
-                wav_path = meta_path.with_suffix(".wav")
-                if not wav_path.exists():
-                    logger.warning(f"Found metadata but missing WAV: {meta_path.name}")
-                    meta_path.unlink()
-                    continue
-
-                if self._process_recording(wav_path, meta_path):
-                    wav_path.unlink()
-                    meta_path.unlink()
-                    logger.info(f"✅ Processed & Deleted: {wav_path.name}")
-                else:
-                    time.sleep(self._config.retry_delay_seconds)
-                    break
-
-            # 2. Check CSV Batch Upload
-            should_rotate = False
-
-            if csv_path.exists():
-                if (time.time() - last_upload_time) > upload_interval:
-                    should_rotate = True
-                    logger.info("⏳ Daily CSV upload triggered.")
-                elif csv_path.stat().st_size > 50000:  # ~50KB
-                    with open(csv_path) as f:
-                        row_count = sum(1 for _ in f)
-                    if row_count >= row_limit:
-                        should_rotate = True
-                        logger.info("📦 Size limit CSV upload triggered.")
-
-            if should_rotate:
-                self._rotate_and_upload(csv_path)
-                last_upload_time = time.time()
-
-            time.sleep(5)
-
-    def _rotate_and_upload(self, csv_path):
-        """Renames the current CSV and uploads it."""
-        if not csv_path.exists():
-            return
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        rotated_name = f"metrics_{timestamp}.csv"
-        rotated_path = self._recordings_dir / rotated_name
-
-        csv_path.rename(rotated_path)
-
-        if self._provider:
             try:
-                key = f"metrics/{rotated_name}"
-                if self._provider.upload(rotated_path, key):
-                    logger.info(f"📊 Uploaded Metrics Batch: {rotated_name}")
-                    rotated_path.unlink()
-                else:
-                    logger.warning("Failed to upload CSV batch (Provider Error).")
+                event = self._queue.get(timeout=WORKER_TIMEOUT_SECONDS)
+            except queue.Empty:
+                continue
+
+            uuid_str = event["uuid"]
+            meta = event.get("metadata", {})
+            label = meta.get("label", "unknown")
+
+            try:
+                wav_buffer = io.BytesIO()
+                wavfile.write(wav_buffer, event["sample_rate"], event["audio_data"])
+                wav_buffer.seek(0)
             except Exception as e:
-                logger.error(f"Failed to upload CSV batch: {e}")
+                logger.error(f"❌ Audio Conversion Failed for {uuid_str}: {e}")
+                continue
 
-    def _process_recording(self, wav_path, meta_path) -> bool:
-        """Returns True if ALL enabled steps succeed."""
+            is_online = self._config.internet_enabled and self._provider is not None
+            success = False
+
+            if is_online:
+                success = self._attempt_direct_upload(wav_buffer, event)
+
+            if not success:
+                self._save_offline_fallback(wav_buffer, uuid_str, label)
+
+    def _attempt_direct_upload(self, wav_buffer: io.BytesIO, event: dict) -> bool:
+        """
+        Uploads an in-memory WAV file directly to S3/Magalu.
+        Returns True if successful, False otherwise.
+        """
+        key = S3_KEY_RECORDING.format(uuid=event["uuid"])
+        meta = event.get("metadata", {})
+
+        s3_metadata = {
+            "label": str(meta.get("label", "unknown")),
+            "confidence": str(meta.get("confidence", "0.0")),
+            "calibrated": str(meta.get("calibrated", False)),
+            "uuid": str(event["uuid"]),
+            "timestamp": str(event["timestamp"]),
+        }
+
         try:
-            with open(meta_path) as f:
-                meta = json.load(f)
-        except Exception:
-            meta = {}
-
-        if self._provider:
-            key = f"recordings/{wav_path.name}"
-            success = self._provider.upload(wav_path, key)
-            if success:
-                logger.info(f"⬆️ Uploaded {wav_path.name}")
+            if hasattr(self._provider, "upload_fileobj"):
+                self._provider.upload_fileobj(wav_buffer, key, extra_args={"Metadata": s3_metadata})
+            elif hasattr(self._provider, "client"):
+                self._provider.client.upload_fileobj(
+                    wav_buffer, self._provider.bucket_name, key, ExtraArgs={"Metadata": s3_metadata}
+                )
             else:
                 return False
 
-        if self._config.telegram_enabled:
-            alerts = ", ".join(meta.get("minor_alerts", []))
-            duration = meta.get("duration_sec", 0)
-            timestamp = meta.get("timestamp", "Unknown")
-
-            msg = (
-                f"📁 **New Recording Uploaded**\n"
-                f"📅 Time: {timestamp}\n"
-                f"⏱️ Duration: {duration:.1f}s\n"
-                f"🔍 Events Detected: {alerts}\n"
-                f"📊 Max Confidence: {meta.get('max_confidence', 0):.2f}"
-            )
-
-            success = self._telegram.send_message_sync(msg)
-            if not success:
-                return False
-
-        return True
-
-    def _enforce_disk_limits(self):
-        """Emergency cleanup: Deletes oldest WAVs if disk > 90% full."""
-        try:
-            usage = shutil.disk_usage(self._recordings_dir)
-            percent_used = (usage.used / usage.total) * 100
-
-            if percent_used > 90:
-                logger.warning(f"⚠️ Disk Full ({percent_used:.1f}%). Triggering emergency cleanup.")
-                wavs = sorted(list(self._recordings_dir.glob("*.wav")), key=lambda f: f.stat().st_mtime)
-
-                for w in wavs[:10]:
-                    try:
-                        w.unlink()
-                        w.with_suffix(".json").unlink(missing_ok=True)
-                        logger.info(f"🗑️ Emergency Delete: {w.name}")
-                    except Exception:
-                        pass
+            logger.info(f"⬆️ Stream Upload Success: {key}")
+            if self._config.telegram_enabled:
+                self._send_telegram_alert(event)
+            return True
         except Exception as e:
-            logger.error(f"Disk check failed: {e}")
+            logger.warning(f"☁️ Stream Upload Failed ({e}). Triggering fallback.")
+            wav_buffer.seek(0)
+            return False
+
+    def _save_offline_fallback(self, wav_buffer: io.BytesIO, uuid_str: str, label: str):
+        """
+        Saves the WAV file to local disk (Dead Letter Queue) for later retry.
+        """
+        filename = FILENAME_OFFLINE_RECORDING.format(uuid=uuid_str, label=label)
+        path = self._recordings_dir / filename
+        try:
+            with open(path, "wb") as f:
+                f.write(wav_buffer.getbuffer())
+            logger.info(f"💾 Saved Offline Evidence: {filename}")
+        except Exception as e:
+            logger.error(f"❌ Disk Save Failed! Evidence Lost: {e}")
+
+    def _csv_batch_worker(self):
+        """
+        Background loop: Monitors the CSV metrics file.
+        Rotates and uploads it if it exceeds size or age limits.
+        """
+        csv_path = Path(self._recordings_dir, METRICS_CSV_BUFFER_FILE)
+        last_check = time.time()
+
+        while not self._stop_event.is_set():
+            if self._stop_event.wait(CSV_CHECK_INTERVAL_SECONDS):
+                break
+
+            if not csv_path.exists():
+                continue
+
+            now = time.time()
+            should_rotate = False
+
+            try:
+                size_mb = csv_path.stat().st_size / (1024 * 1024)
+                if size_mb > CSV_ROTATION_SIZE_MB:
+                    should_rotate = True
+                elif (now - last_check) > CSV_ROTATION_AGE_SECONDS:
+                    should_rotate = True
+            except Exception:
+                continue
+
+            if should_rotate:
+                self._rotate_and_upload_csv(csv_path)
+                last_check = now
+
+    def _rotate_and_upload_csv(self, csv_path: Path):
+        """
+        Renames the current CSV log and attempts to upload it.
+        Deletes the file upon successful upload.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        rotated_name = FILENAME_ROTATED_CSV.format(timestamp=timestamp)
+        rotated_path = self._recordings_dir / rotated_name
+
+        try:
+            shutil.move(str(csv_path), str(rotated_path))
+        except Exception as e:
+            logger.error(f"CSV Rotate Failed: {e}")
+            return
+
+        if self._config.internet_enabled and self._provider:
+            try:
+                key = S3_KEY_METRICS.format(filename=rotated_name)
+                if self._provider.upload(str(rotated_path), key):
+                    logger.info(f"📊 Batch Upload Success: {rotated_name}")
+                    rotated_path.unlink()
+                else:
+                    logger.warning("📊 Batch Upload Failed. Keeping local copy.")
+            except Exception as e:
+                logger.error(f"Batch Upload Error: {e}")
+
+    def _retry_worker(self):
+        """
+        Background loop: Scans local disk for offline .wav files and retries upload.
+        """
+        while not self._stop_event.is_set():
+            if self._stop_event.wait(RETRY_INTERVAL_SECONDS):
+                break
+
+            if not self._config.internet_enabled or not self._provider:
+                continue
+
+            offline_files = list(self._recordings_dir.glob("evidence_*.wav"))
+            if not offline_files:
+                continue
+
+            logger.info(f"🔄 Retry Loop: Found {len(offline_files)} pending uploads.")
+            for wav_path in offline_files:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    file_uuid = wav_path.name.split("_")[1]
+                    key = S3_KEY_RECORDING.format(uuid=file_uuid)
+
+                    if self._provider.upload(str(wav_path), key):
+                        logger.info(f"✅ Retry Success: {wav_path.name}")
+                        wav_path.unlink()
+                    else:
+                        logger.warning(f"❌ Retry Failed: {wav_path.name}")
+                except Exception as e:
+                    logger.error(f"Retry Error: {e}")
+
+    def _send_telegram_alert(self, event):
+        """
+        Formats and sends a notification to the configured Telegram Chat.
+        Conditionally includes dBSPL only if calibration was active.
+        """
+        meta = event.get("metadata", {})
+        is_cal = meta.get("calibrated", False)
+
+        lines = [
+            "📁 **New Evidence Uploaded**",
+            f"🏷️ Label: {meta.get('label', 'unknown')}",
+            f"🎯 Conf: {float(meta.get('confidence', 0.0)):.2f}",
+        ]
+
+        if is_cal:
+            dbspl = meta.get("dbspl")
+            if dbspl is not None:
+                lines.append(f"🔊 dBSPL: {float(dbspl):.1f} dB")
+
+        lines.append(f"⏱️ Duration: {event['duration_sec']:.1f}s")
+
+        msg = "\n".join(lines)
+        self._telegram.send_message_sync(msg, stop_event=self._stop_event)

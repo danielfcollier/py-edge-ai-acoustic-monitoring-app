@@ -1,6 +1,5 @@
 """
 Main Entry Point for Edge Acoustic Monitor.
-Leverages umik-base-app for Producer/Consumer topology.
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
@@ -10,6 +9,7 @@ Year: 2026
 import argparse
 import logging
 import os
+import queue
 import sys
 from pathlib import Path
 
@@ -22,6 +22,7 @@ from .calibration import setup_calibration
 from .context import PipelineContext
 from .services.cloud_uploader_service import CloudUploaderService
 from .services.health_monitor_service import HealthMonitorService
+from .services.system_heartbeat_service import SystemHeartbeatService
 from .settings import settings
 from .sinks.feature_extractor_sink import FeatureExtractorSink
 from .sinks.policy_engine_sink import PolicyEngineSink
@@ -29,6 +30,8 @@ from .sinks.smart_recorder_sink import SmartRecorderSink
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+MAX_PENDING_FILE_UPLOADS = 50
 
 # Suppress noisy HTTP libraries
 for lib in ["httpx", "httpcore"]:
@@ -82,6 +85,14 @@ def main():
 
     app_config = setup_calibration(base_args)
 
+    upload_queue = queue.Queue(maxsize=MAX_PENDING_FILE_UPLOADS)
+
+    # Ensure Output Path exists
+    output_path = settings.CONFIG.services.recording_output_path
+    if not output_path.exists():
+        logger.info(f"📁 Creating output directory: {output_path}")
+        output_path.mkdir(parents=True, exist_ok=True)
+
     # Initialization
     logger.info(f"🚀 Initializing in [{app_config.run_mode.upper()}] mode")
 
@@ -92,20 +103,28 @@ def main():
     health_monitor.start()
     services.append(health_monitor)
 
+    # Service: System Heartbeat (CSV Logger)
+    system_heartbeat = SystemHeartbeatService()
+    system_heartbeat.start()
+    services.append(system_heartbeat)
+
+    # Service: Cloud Upload (Consumer)
     if app_config.run_mode in ["monolithic", "consumer"]:
-        uploader = CloudUploaderService()
+        uploader = CloudUploaderService(upload_queue=upload_queue, output_path=output_path)
         uploader.start()
         services.append(uploader)
 
-    # Sinks Layer
+    # Pipeline Setup
     context = PipelineContext()
     pipeline = AudioPipeline()
 
     pipeline.add_sink(FeatureExtractorSink(context))
     pipeline.add_sink(PolicyEngineSink(context))
-    pipeline.add_sink(SmartRecorderSink(context))
 
-    # Application Run
+    # Sink: Smart Recorder (Producer)
+    pipeline.add_sink(SmartRecorderSink(context, upload_queue))
+
+    # Application Start
     app = AudioBaseApp(app_config=app_config, pipeline=pipeline)
 
     try:
