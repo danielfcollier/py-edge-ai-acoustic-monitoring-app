@@ -1,7 +1,8 @@
 """
-Tests for PolicyEngineSink — focused on the privacy gate (Batch A).
+Tests for PolicyEngineSink — privacy gate (Batch A) and alert cooldown.
 """
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -88,3 +89,82 @@ class TestPrivacyGate:
         # Second call resets actions first
         sink.handle(_audio_ctx())
         assert app_context.actions_to_take.count("record_evidence") == 1
+
+
+def _mock_time(t: float):
+    """Returns a time mock fixed at t, with localtime set to daytime (hour=12)."""
+    m = MagicMock()
+    m.time.return_value = t
+    m.localtime.return_value = MagicMock(tm_hour=12)
+    return m
+
+
+class TestAlertCooldown:
+    def test_telegram_fires_on_first_match(self, app_context):
+        rule = _make_rule("r", "True", ["telegram_alert", "record_evidence"])
+        sink = _make_sink(app_context, [rule], privacy_active=False)
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(0.0)):
+            sink.handle(_audio_ctx())
+
+        sink._telegram.send_message_sync.assert_called_once()
+        assert "record_evidence" in app_context.actions_to_take
+
+    def test_telegram_blocked_within_cooldown(self, app_context):
+        rule = _make_rule("r", "True", ["telegram_alert", "record_evidence"])
+        sink = _make_sink(app_context, [rule], privacy_active=False)
+        sink._alert_cooldown = 60
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(0.0)):
+            sink.handle(_audio_ctx())
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(30.0)):
+            sink.handle(_audio_ctx())
+
+        assert sink._telegram.send_message_sync.call_count == 1  # only fired once
+
+    def test_recording_actions_always_fire_during_cooldown(self, app_context):
+        rule = _make_rule("r", "True", ["telegram_alert", "record_evidence", "cloud_upload"])
+        sink = _make_sink(app_context, [rule], privacy_active=False)
+        sink._alert_cooldown = 60
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(0.0)):
+            sink.handle(_audio_ctx())
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(30.0)):
+            sink.handle(_audio_ctx())
+
+        # Recording actions must fire on every matched frame — not gated by cooldown
+        assert "record_evidence" in app_context.actions_to_take
+        assert "cloud_upload" in app_context.actions_to_take
+
+    def test_telegram_refires_after_cooldown_expires(self, app_context):
+        rule = _make_rule("r", "True", ["telegram_alert", "record_evidence"])
+        sink = _make_sink(app_context, [rule], privacy_active=False)
+        sink._alert_cooldown = 60
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(0.0)):
+            sink.handle(_audio_ctx())
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(61.0)):
+            sink.handle(_audio_ctx())
+
+        assert sink._telegram.send_message_sync.call_count == 2
+
+    def test_cooldown_is_per_policy(self, app_context):
+        r1 = _make_rule("r1", "True", ["telegram_alert"])
+        r2 = _make_rule("r2", "True", ["telegram_alert"])
+        sink = _make_sink(app_context, [r1, r2], privacy_active=False)
+        sink._alert_cooldown = 60
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(0.0)):
+            sink.handle(_audio_ctx())  # both fire
+
+        with patch("app.sinks.policy_engine_sink.time", _mock_time(61.0)):
+            # Manually put r1 on cooldown, r2 not
+            sink._last_alert_times["r1"] = 60.0  # last fired at t=60, expires at t=120
+            sink.handle(_audio_ctx())
+
+        # r1 should be blocked, r2 should fire again
+        calls = sink._telegram.send_message_sync.call_count
+        assert calls == 3  # 2 at t=0, 1 (r2 only) at t=61
