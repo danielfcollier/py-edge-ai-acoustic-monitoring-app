@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import resampy
-from umik_base_app import AudioSink
+from umik_base_app import AudioSink, PipelineContext as AudioCtx
 from umik_base_app.core.audio_metrics import AudioMetrics
 
 from ..context import PipelineContext
@@ -63,21 +63,7 @@ class FeatureExtractorSink(AudioSink):
         self._sad_threshold_flux = self._config.sad_threshold_flux
         self._sad_threshold_dbspl = self._config.sad_threshold_dbspl
 
-        # Calibration Data
-        self._mic_sensitivity = getattr(settings.HARDWARE, "NOMINAL_SENSITIVITY_DBFS", None)
-        self._ref_dbspl = getattr(settings.HARDWARE, "REFERENCE_DBSPL", None)
-
-        # 🆕 CALCULATE GAIN BOOST
-        # If the mic sensitivity is -18dBFS (at 94dB), we apply +18dB gain
-        # to normalize loud sounds to ~0dBFS for the AI.
-        self._linear_gain = 1.0
-        if self._mic_sensitivity is not None:
-            # Calculate boost: 10 ^ (abs(sensitivity) / 20)
-            # e.g., -18dB -> ~7.9x boost
-            self._linear_gain = 10.0 ** (abs(self._mic_sensitivity) / 20.0)
-            logger.info(
-                f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost (based on Sensitivity {self._mic_sensitivity}dB)"
-            )
+        self._linear_gain: float | None = None  # lazy-init from ctx on first handle call
 
         # Setup
         self._load_classes()
@@ -181,15 +167,25 @@ class FeatureExtractorSink(AudioSink):
         logger.info(f"Loading Full TensorFlow model: {model_path}")
         self._tf_model = tf.saved_model.load(model_path)
 
-    def handle_audio(self, audio_chunk: np.ndarray, timestamp) -> None:
+    def handle(self, ctx: AudioCtx) -> None:
         """Process incoming audio: Physics -> SAD Gate -> AI Inference."""
 
+        # Lazy-init gain boost from ctx calibration metadata
+        if self._linear_gain is None:
+            if not ctx.gain_applied and ctx.sensitivity_dbfs is not None:
+                self._linear_gain = 10.0 ** (abs(ctx.sensitivity_dbfs) / 20.0)
+                logger.info(
+                    f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost (based on Sensitivity {ctx.sensitivity_dbfs}dB)"
+                )
+            else:
+                self._linear_gain = 1.0
+
         # 1. Update Pre-Roll Buffer (Crucial for evidence recording)
-        self._context.audio_pre_buffer.append(audio_chunk)
+        self._context.audio_pre_buffer.append(ctx.audio)
 
         # 2. Stage 1: Basic Physics (Cheap)
-        rms = AudioMetrics.rms(audio_chunk)
-        flux = AudioMetrics.flux(audio_chunk, self._input_sr)
+        rms = AudioMetrics.rms(ctx.audio)
+        flux = AudioMetrics.flux(ctx.audio, self._input_sr)
 
         self._context.metrics["rms"] = rms
         self._context.metrics["flux"] = flux
@@ -204,9 +200,9 @@ class FeatureExtractorSink(AudioSink):
 
         # 3. Stage 2: Precision Physics (Expensive & Calibrated)
         dBSPL = 0.0
-        if self._mic_sensitivity is not None and self._ref_dbspl is not None:
-            dBFS = AudioMetrics.dBFS(audio_chunk)
-            dBSPL = AudioMetrics.dBSPL(dBFS, self._mic_sensitivity, self._ref_dbspl)
+        if ctx.can_calculate_dbspl():
+            dBFS = AudioMetrics.dBFS(ctx.audio)
+            dBSPL = AudioMetrics.dBSPL(dBFS, ctx.sensitivity_dbfs, ctx.reference_dbspl)
 
             # SAD Stage 2: SPL Filter
             if dBSPL < self._sad_threshold_dbspl:
@@ -222,7 +218,7 @@ class FeatureExtractorSink(AudioSink):
         self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms, flux)
 
         # 5. Accumulate for AI Inference
-        self._raw_buffer.append(audio_chunk)
+        self._raw_buffer.append(ctx.audio)
         current_size = sum(len(c) for c in self._raw_buffer)
 
         # Ratio correction for resampling (e.g. 48k -> 16k requires 3x samples)
@@ -335,8 +331,7 @@ class FeatureExtractorSink(AudioSink):
             rms = self._context.metrics.get("rms", 0.0)
             flux = self._context.metrics.get("flux", 0.0)
 
-            # Use .get() and correct casing "dBSPL" to match handle_audio
-            dBSPL = self._context.metrics.get("dBSPL", 0.0)
+            dBSPL = self._context.metrics.get("dbspl", 0.0)
 
             if dBSPL > 0:
                 logger.info(
