@@ -260,7 +260,7 @@ class CloudUploaderService:
             if not self._config.internet_enabled or not self._provider:
                 continue
 
-            offline_files = list(self._recordings_dir.glob("evidence_*.wav"))
+            offline_files = list(self._recordings_dir.glob("evidence-*.wav"))
             if not offline_files:
                 continue
 
@@ -269,8 +269,9 @@ class CloudUploaderService:
                 if self._stop_event.is_set():
                     break
                 try:
-                    file_uuid = wav_path.stem.split("-")[-1]
-                    key = S3_KEY_RECORDING.format(uuid=file_uuid)
+                    parts = wav_path.stem.split("-", 2)
+                    file_timestamp, file_uuid = parts[1], parts[2]
+                    key = S3_KEY_RECORDING.format(timestamp=file_timestamp, uuid=file_uuid)
 
                     if self._provider.upload(str(wav_path), key):
                         logger.info(f"✅ Retry Success: {wav_path.name}")
