@@ -38,11 +38,11 @@ CSV_CHECK_INTERVAL_SECONDS = 10
 RETRY_INTERVAL_SECONDS = 60
 
 # --- File & Path Templates ---
-FILENAME_OFFLINE_RECORDING = "evidence_{uuid}_{label}.wav"
-FILENAME_ROTATED_CSV = "metrics_{timestamp}.csv"
+FILENAME_OFFLINE_RECORDING = "evidence-{timestamp}-{uuid}.wav"
+FILENAME_ROTATED_CSV = "metrics-{date}.csv"
 
 # --- Cloud Key Templates ---
-S3_KEY_RECORDING = "recordings/evidence_{uuid}.wav"
+S3_KEY_RECORDING = "recordings/evidence-{timestamp}-{uuid}.wav"
 S3_KEY_METRICS = "metrics/{filename}"
 
 
@@ -81,7 +81,7 @@ class CloudUploaderService:
                 access_key=settings.MAGALU_ACCESS_KEY or cfg.aws_access_key,
                 secret_key=settings.MAGALU_SECRET_KEY or cfg.aws_secret_key,
                 bucket_name=cfg.bucket_name,
-                endpoint_url="https://s3.magaluobjects.com",
+                endpoint_url=settings.MAGALU_URL,
             )
         elif cfg.provider == "aws":
             logger.info("☁️  Using AWS S3")
@@ -98,7 +98,7 @@ class CloudUploaderService:
         threading.Thread(target=self._stream_worker, name="UploaderStream", daemon=True).start()
         threading.Thread(target=self._csv_batch_worker, name="UploaderCSV", daemon=True).start()
         threading.Thread(target=self._retry_worker, name="UploaderRetry", daemon=True).start()
-        logger.info(f"☁️ Cloud Uploader Started. Storage: {self._recordings_dir}")
+        logger.info(f"☁️  Cloud Uploader Started. Storage: {self._recordings_dir}")
 
     def stop(self):
         """Signals all workers to stop."""
@@ -134,14 +134,14 @@ class CloudUploaderService:
                 success = self._attempt_direct_upload(wav_buffer, event)
 
             if not success:
-                self._save_offline_fallback(wav_buffer, uuid_str, label)
+                self._save_offline_fallback(wav_buffer, uuid_str, event["timestamp"])
 
     def _attempt_direct_upload(self, wav_buffer: io.BytesIO, event: dict) -> bool:
         """
         Uploads an in-memory WAV file directly to S3/Magalu.
         Returns True if successful, False otherwise.
         """
-        key = S3_KEY_RECORDING.format(uuid=event["uuid"])
+        key = S3_KEY_RECORDING.format(timestamp=event["timestamp"], uuid=event["uuid"])
         meta = event.get("metadata", {})
 
         s3_metadata = {
@@ -171,12 +171,20 @@ class CloudUploaderService:
             wav_buffer.seek(0)
             return False
 
-    def _save_offline_fallback(self, wav_buffer: io.BytesIO, uuid_str: str, label: str):
+    def _save_offline_fallback(self, wav_buffer: io.BytesIO, uuid_str: str, timestamp_iso: str):
         """
         Saves the WAV file to local disk (Dead Letter Queue) for later retry.
         """
-        filename = FILENAME_OFFLINE_RECORDING.format(uuid=uuid_str, label=label)
-        path = self._recordings_dir / filename
+        try:
+            dt = datetime.fromisoformat(timestamp_iso)
+        except ValueError:
+            dt = datetime.now()
+
+        formatted_time = dt.strftime("%Y%m%d_%H%M%S")
+
+        filename = FILENAME_OFFLINE_RECORDING.format(timestamp=formatted_time, uuid=uuid_str)
+        path = Path(self._recordings_dir, filename)
+
         try:
             with open(path, "wb") as f:
                 f.write(wav_buffer.getbuffer())
@@ -220,9 +228,9 @@ class CloudUploaderService:
         Renames the current CSV log and attempts to upload it.
         Deletes the file upon successful upload.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        rotated_name = FILENAME_ROTATED_CSV.format(timestamp=timestamp)
-        rotated_path = self._recordings_dir / rotated_name
+        datestamp = datetime.now().strftime("%Y%m%d")
+        rotated_name = FILENAME_ROTATED_CSV.format(date=datestamp)
+        rotated_path = Path(self._recordings_dir, rotated_name)
 
         try:
             shutil.move(str(csv_path), str(rotated_path))
@@ -261,7 +269,7 @@ class CloudUploaderService:
                 if self._stop_event.is_set():
                     break
                 try:
-                    file_uuid = wav_path.name.split("_")[1]
+                    file_uuid = wav_path.stem.split("-")[-1]
                     key = S3_KEY_RECORDING.format(uuid=file_uuid)
 
                     if self._provider.upload(str(wav_path), key):

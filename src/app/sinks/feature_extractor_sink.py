@@ -39,8 +39,6 @@ class FeatureExtractorSink(AudioSink):
     def __init__(self, context: PipelineContext):
         """
         Initializes the Feature Extractor.
-
-        :param context: The shared PipelineContext to update with metrics/inference.
         """
         self._context = context
         self._config: FeatureExtractorConfig = settings.CONFIG.feature_extractor
@@ -48,6 +46,7 @@ class FeatureExtractorSink(AudioSink):
         # Services & Resources
         self._metrics = PrometheusService()
         self._classes = []
+        self._excluded_indices = []
         self._model = None
 
         # Audio Configuration
@@ -64,12 +63,25 @@ class FeatureExtractorSink(AudioSink):
         self._sad_threshold_flux = self._config.sad_threshold_flux
         self._sad_threshold_dbspl = self._config.sad_threshold_dbspl
 
-        # Calibration Data (Safe access)
+        # Calibration Data
         self._mic_sensitivity = getattr(settings.HARDWARE, "NOMINAL_SENSITIVITY_DBFS", None)
         self._ref_dbspl = getattr(settings.HARDWARE, "REFERENCE_DBSPL", None)
 
+        # 🆕 CALCULATE GAIN BOOST
+        # If the mic sensitivity is -18dBFS (at 94dB), we apply +18dB gain
+        # to normalize loud sounds to ~0dBFS for the AI.
+        self._linear_gain = 1.0
+        if self._mic_sensitivity is not None:
+            # Calculate boost: 10 ^ (abs(sensitivity) / 20)
+            # e.g., -18dB -> ~7.9x boost
+            self._linear_gain = 10.0 ** (abs(self._mic_sensitivity) / 20.0)
+            logger.info(
+                f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost (based on Sensitivity {self._mic_sensitivity}dB)"
+            )
+
         # Setup
         self._load_classes()
+        self._resolve_excluded_indices()
 
         if not self._model_exists():
             logger.info("⬇️ First run detected. Downloading YAMNet models...")
@@ -117,6 +129,13 @@ class FeatureExtractorSink(AudioSink):
             logger.error(error)
             raise FileExistsError(error)
 
+    def _resolve_excluded_indices(self):
+        """Maps 'exclude_classes' to their YAMNet indices for masking."""
+        excluded_names = set(self._config.exclude_classes)
+        self._excluded_indices = [i for i, name in enumerate(self._classes) if name in excluded_names]
+        if self._excluded_indices:
+            logger.info(f"🚫 Exclusion Active. Muting {len(self._excluded_indices)} classes: {list(excluded_names)}")
+
     def _init_tflite(self):
         """Initializes the TFLite runtime interpreter."""
         try:
@@ -163,9 +182,8 @@ class FeatureExtractorSink(AudioSink):
         self._tf_model = tf.saved_model.load(model_path)
 
     def handle_audio(self, audio_chunk: np.ndarray, timestamp) -> None:
-        """
-        Process incoming audio: Physics -> SAD Gate -> AI Inference.
-        """
+        """Process incoming audio: Physics -> SAD Gate -> AI Inference."""
+
         # 1. Update Pre-Roll Buffer (Crucial for evidence recording)
         self._context.audio_pre_buffer.append(audio_chunk)
 
@@ -173,13 +191,11 @@ class FeatureExtractorSink(AudioSink):
         rms = AudioMetrics.rms(audio_chunk)
         flux = AudioMetrics.flux(audio_chunk, self._input_sr)
 
-        # Publish basic metrics to Context
         self._context.metrics["rms"] = rms
         self._context.metrics["flux"] = flux
-        self._context.metrics["dBSPL"] = 0.0  # Default/Floor
+        self._context.metrics["dbspl"] = 0.0  # Default/Floor
 
         # SAD Stage 1: Noise Gate
-        # Is it Loud (RMS) OR Sudden (Flux)?
         is_active = (rms > self._sad_threshold_rms) or (flux > self._sad_threshold_flux)
 
         if not is_active:
@@ -197,13 +213,12 @@ class FeatureExtractorSink(AudioSink):
                 self._handle_silence(dbspl_val=dBSPL, rms_val=rms)
                 return
 
-            # Update Context with valid SPL
-            self._context.metrics["dBSPL"] = dBSPL
+            self._context.metrics["dbspl"] = dBSPL
         else:
             # Uncalibrated: Skip SAD Stage 2 and SPL calculation
             pass
 
-        # 4. Update Prometheus (Active State)
+        # 4. Update Prometheus
         self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms, flux)
 
         # 5. Accumulate for AI Inference
@@ -235,13 +250,21 @@ class FeatureExtractorSink(AudioSink):
         raw_audio = np.concatenate(self._raw_buffer)
         resampled = resampy.resample(raw_audio, self._input_sr, self._target_sr)
 
-        # Strict input size matching
+        # Pad or Crop to exact model input size
         if len(resampled) > self._model_input_size:
             input_data = resampled[: self._model_input_size]
         else:
             input_data = np.pad(resampled, (0, self._model_input_size - len(resampled)))
 
+        # Convert to Float32
         input_data = input_data.astype(np.float32)
+
+        # 🆕 APPLY GAIN BOOST (Normalization)
+        # This makes the audio "louder" for the AI without expensive FIR filtering
+        input_data *= self._linear_gain
+
+        # Clip to safe range [-1.0, 1.0] to prevent distortion artifacts
+        input_data = np.clip(input_data, -1.0, 1.0)
 
         # Run Inference
         if self._config.use_tflite:
@@ -272,22 +295,48 @@ class FeatureExtractorSink(AudioSink):
         self._update_context(avg_scores)
 
     def _update_context(self, scores):
-        """Updates Context and Metrics Service with AI results."""
+        """Updates Context with results, filtering excluded classes."""
+
+        # 1. Mask Excluded Classes
+        if self._excluded_indices:
+            scores[self._excluded_indices] = 0.0
+
+        # 2. Get Top-1
         prediction_index = scores.argmax()
         label = self._classes[prediction_index] if prediction_index < len(self._classes) else "Unknown"
         confidence = float(scores[prediction_index])
 
-        # Update Pipeline Context
+        # 3. DEBUG: Top 5 (Clean Loop)
+        sorted_indices = np.argsort(scores)[::-1]
+        debug_parts = ["🔍 YAMNet Top 5:"]
+        count = 0
+        for idx in sorted_indices:
+            if count >= 5:
+                break
+            if idx in self._excluded_indices:
+                continue
+
+            cls_name = self._classes[idx] if idx < len(self._classes) else "Unknown"
+            score = scores[idx]
+            debug_parts.append(f"[{cls_name}: {score:.2f}]")
+            count += 1
+
+        logger.debug(" ".join(debug_parts))
+
+        # 4. Update Pipeline Context
         self._context.current_event_label = label
         self._context.current_confidence = confidence
 
-        # Update Live Status Gauge (Not Counter!)
+        # 5. Update Live Status Gauge (Needle)
         self._metrics.update_ai_status(label, confidence)
 
+        # 6. Log Significant Events
         if confidence > self._logging_threshold:
-            rms = self._context.metrics["rms"]
-            flux = self._context.metrics["flux"]
-            dBSPL = self._context.metrics["dBSPL"]
+            rms = self._context.metrics.get("rms", 0.0)
+            flux = self._context.metrics.get("flux", 0.0)
+
+            # Use .get() and correct casing "dBSPL" to match handle_audio
+            dBSPL = self._context.metrics.get("dBSPL", 0.0)
 
             if dBSPL > 0:
                 logger.info(

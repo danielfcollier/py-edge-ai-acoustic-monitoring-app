@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 2s  # Very fast scraping for "Real-Time" feel
+
+scrape_configs:
+  - job_name: 'edge-monitor'
+    static_configs:
+      # If app is on host machine (outside docker):
+      - targets: ['host.docker.internal:9090'] 
+      # OR if app is on a specific IP (e.g. Raspberry Pi):
+      # - targets: ['192.168.1.100:9090']

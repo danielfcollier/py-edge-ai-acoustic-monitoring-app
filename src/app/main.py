@@ -16,6 +16,8 @@ from pathlib import Path
 # Suppress TensorFlow Logs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+import warnings
+
 from umik_base_app import AppArgs, AudioBaseApp, AudioPipeline
 
 from .calibration import setup_calibration
@@ -27,6 +29,8 @@ from .settings import settings
 from .sinks.feature_extractor_sink import FeatureExtractorSink
 from .sinks.policy_engine_sink import PolicyEngineSink
 from .sinks.smart_recorder_sink import SmartRecorderSink
+
+warnings.filterwarnings("ignore", category=FutureWarning, module="keras.src.export.tf2onnx_lib")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
