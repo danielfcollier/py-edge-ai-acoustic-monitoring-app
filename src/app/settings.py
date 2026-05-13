@@ -127,6 +127,23 @@ class FeatureExtractorConfig(BaseModel):
     sad_threshold_flux: float = 5.0
     sad_threshold_dbspl: float = 45.0
 
+    exclude_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Silence",
+            "Inside, small room",
+            "Wind",
+            "Wind noise",
+            "White noise",
+            "Mouse",
+            "Mechanical fan",
+            "Camera",
+            "Outside, rural or natural",
+            "Mechanisms",
+            "Sound Effect",
+            "Rustling leaves",
+        ]
+    )
+
 
 class CloudConfig(BaseModel):
     provider: Literal["magalu", "aws", "gcp"] = "magalu"
@@ -197,6 +214,7 @@ class AppSettings(BaseSettings):
     MAGALU_ACCESS_KEY: str | None = Field(None, alias="MAGALU_KEY")
     MAGALU_SECRET_KEY: str | None = Field(None, alias="MAGALU_SECRET")
     MAGALU_BUCKET: str = "acoustic-logs"
+    MAGALU_URL: str = "https://br-se1.magaluobjects.com"
 
     # --- Logging Levels (Controlled via .env) ---
     LOG_LEVEL_MAIN: str = "INFO"
