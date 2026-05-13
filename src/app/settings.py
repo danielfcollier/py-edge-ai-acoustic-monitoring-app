@@ -179,6 +179,7 @@ class ServiceConfig(BaseModel):
     recording_max_seconds: int = 60
     recording_post_roll_seconds: int = 10
     metrics_csv_buffer_file: str = "metrics_buffer.csv"
+    dbspl_silence_level: float = 30.0  # Prometheus floor when mic is uncalibrated
 
     # Operational Settings
     retry_attempts: int = 3

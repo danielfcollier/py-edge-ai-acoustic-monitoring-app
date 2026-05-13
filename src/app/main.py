@@ -27,8 +27,10 @@ from .services.health_monitor_service import HealthMonitorService
 from .services.recorder_transformer_worker import RecorderTransformerWorker
 from .services.system_heartbeat_service import SystemHeartbeatService
 from .settings import settings
+from .sinks.basic_metrics_sink import BasicMetricsSink
 from .sinks.feature_extractor_sink import FeatureExtractorSink
 from .sinks.policy_engine_sink import PolicyEngineSink
+from .sinks.sad_gateway_sink import SADGatewaySink
 from .sinks.smart_buffer_sink import SmartBufferSink
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="keras.src.export.tf2onnx_lib")
@@ -129,6 +131,8 @@ def main():
     context = PipelineContext()
     pipeline = AudioPipeline()
 
+    pipeline.add_sink(BasicMetricsSink(context))
+    pipeline.add_sink(SADGatewaySink(context))
     pipeline.add_sink(FeatureExtractorSink(context))
     pipeline.add_sink(PolicyEngineSink(context))
 
