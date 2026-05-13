@@ -16,19 +16,19 @@ from pathlib import Path
 
 # Ensure 'app' module can be imported regardless of run location
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
+if str(PROJECT_ROOT) not in sys.path:  # noqa: E402
     sys.path.append(str(PROJECT_ROOT))
 
-import boto3
-import markdown
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
-from matplotlib.dates import DateFormatter
-from tabulate import tabulate
-from weasyprint import CSS, HTML
+import boto3  # noqa: E402
+import markdown  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+import pandas as pd  # noqa: E402
+import seaborn as sns  # noqa: E402
+from matplotlib.dates import DateFormatter  # noqa: E402
+from tabulate import tabulate  # noqa: E402
+from weasyprint import CSS, HTML  # noqa: E402
 
-from app.settings import settings
+from app.settings import settings  # noqa: E402
 
 # --- CONFIGURATION ---
 REPORT_DIR = Path("reports")
