@@ -61,7 +61,7 @@ class SystemHeartbeatService:
             cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
             # id, timestamp, label, confidence, rms, dbspl, flux, cpu, ram, temp, rom, rom attached
             row = [
-                f"heartbeat-{uuid.uuid4()}",
+                f"{uuid.uuid4()}",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
                 "SystemCheck",
                 "1.00",  # Confidence

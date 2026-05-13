@@ -15,6 +15,7 @@ import numpy as np
 from umik_base_app import AudioSink
 
 from ..context import PipelineContext
+from ..services.telegram_bot_client import TelegramBotClient
 from ..settings import settings
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,9 @@ class PolicyEngineSink(AudioSink):
         """
         self._context = context
         self._policies = settings.CONFIG.policies
+
+        # Services
+        self._telegram = TelegramBotClient()
 
         # Cooldown State Management
         # Prevents spamming alerts for the same event (e.g. Barking for 10 minutes)
@@ -86,7 +90,7 @@ class PolicyEngineSink(AudioSink):
         logger.debug(
             f"🔍 EVAL CONTEXT | Time: {current_hour}h ({'Night' if is_night else 'Day'}) | "
             f"Label: '{eval_scope['current_event_label']}' ({eval_scope['current_confidence']:.2f}) | "
-            f"dB: {eval_scope['metrics'].get('dBSPL', 0):.1f}"
+            f"dB: {eval_scope['metrics'].get('dbspl', 0):.1f}"
         )
 
         current_time = time.time()
@@ -143,3 +147,23 @@ class PolicyEngineSink(AudioSink):
 
         # Extend the list of actions for downstream sinks (Recorder, Uploader)
         self._context.actions_to_take.extend(policy.actions)
+
+        # Execute Immediate Actions
+        if "telegram_alert" in policy.actions:
+            self._send_telegram_alert(policy)
+
+    def _send_telegram_alert(self, policy):
+        """
+        Constructs and sends an immediate Telegram alert for the triggered policy.
+        """
+        label = self._context.current_event_label
+        conf = self._context.current_confidence
+
+        lines = [
+            "🚨 **Policy Triggered**",
+            f"🛡️ Rule: {policy.name}",
+            f"👂 Detected: {label} ({conf:.2f})",
+        ]
+
+        msg = "\n".join(lines)
+        self._telegram.send_message_sync(msg)

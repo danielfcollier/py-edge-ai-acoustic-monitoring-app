@@ -49,7 +49,7 @@ class HealthMonitorService:
             self._led = LED(self._config.gpio_heartbeat_pin)
             logger.info(f"🔌 GPIO Heartbeat enabled on Pin {self._config.gpio_heartbeat_pin}")
         except ImportError:
-            logger.info("⚠️ GPIO not available. Skipping physical heartbeat.")
+            logger.info("⚠️  GPIO not available. Skipping physical heartbeat.")
         except Exception as e:
             logger.error(f"❌ GPIO Init Error: {e}")
 

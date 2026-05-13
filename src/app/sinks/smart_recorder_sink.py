@@ -248,6 +248,14 @@ class SmartRecorderSink(AudioSink):
             return
 
         full_audio = np.concatenate(self._audio_buffer)
+        max_samples = int(self._max_duration_sec * self._sample_rate)
+
+        if len(full_audio) > max_samples:
+            logger.warning(
+                f"⚠️ Recording length ({len(full_audio)} samples) exceeded limit. Truncating to {max_samples} samples."
+            )
+            full_audio = full_audio[:max_samples]
+
         duration = len(full_audio) / self._sample_rate
 
         event_object = {
