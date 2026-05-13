@@ -116,8 +116,6 @@ class CloudUploaderService:
                 continue
 
             uuid_str = event["uuid"]
-            meta = event.get("metadata", {})
-            label = meta.get("label", "unknown")
 
             try:
                 wav_buffer = io.BytesIO()
