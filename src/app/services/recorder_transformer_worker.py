@@ -54,9 +54,7 @@ class RecorderTransformerWorker:
             )
             logger.info("🔊 FIR Calibration transformer ready (async worker).")
         except Exception as e:
-            logger.critical(
-                f"❌ Calibration init failed: {e}. Evidence will be uploaded uncalibrated."
-            )
+            logger.critical(f"❌ Calibration init failed: {e}. Evidence will be uploaded uncalibrated.")
             self._calibrator = None
 
     def start(self):
@@ -78,9 +76,7 @@ class RecorderTransformerWorker:
             try:
                 self._upload_queue.put(processed, block=False)
             except queue.Full:
-                logger.error(
-                    f"❌ Upload queue full — dropping event {processed['uuid'][:8]}."
-                )
+                logger.error(f"❌ Upload queue full — dropping event {processed['uuid'][:8]}.")
 
     def _transform(self, event: dict) -> dict:
         if not self._calibrator:
@@ -95,7 +91,5 @@ class RecorderTransformerWorker:
                 "metadata": {**event.get("metadata", {}), "calibrated": True},
             }
         except Exception as e:
-            logger.error(
-                f"❌ FIR calibration failed for {event['uuid'][:8]}: {e}. Using raw audio."
-            )
+            logger.error(f"❌ FIR calibration failed for {event['uuid'][:8]}: {e}. Using raw audio.")
             return event
