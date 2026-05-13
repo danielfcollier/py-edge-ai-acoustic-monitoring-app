@@ -7,20 +7,21 @@ import queue
 import threading
 from unittest.mock import MagicMock, patch, sentinel
 
-import numpy as np
-import pytest
-
 from app.services.recorder_transformer_worker import RecorderTransformerWorker
 
 
 def _raw_event(audio=None):
     return {
-        "uuid": "aaaabbbb-cccc-dddd-eeee-ffffffffffff",  # must be a str (sliced in logs)
+        "uuid": "aaaabbbb-cccc-dddd-eeee-ffffffffffff",  # str required (sliced in logs)
         "timestamp": sentinel.TIMESTAMP,
         "duration_sec": sentinel.DURATION,
         "sample_rate": sentinel.SAMPLE_RATE,
         "audio_data": audio if audio is not None else sentinel.RAW_AUDIO,
-        "metadata": {"label": sentinel.LABEL, "confidence": sentinel.CONFIDENCE, "calibrated": False},
+        "metadata": {
+            "label": sentinel.LABEL,
+            "confidence": sentinel.CONFIDENCE,
+            "calibrated": False,
+        },
     }
 
 
@@ -29,7 +30,7 @@ def _make_settings(save_calibrated=False, cal_file=sentinel.CAL_FILE):
     m.CONFIG.services.save_calibrated_wave = save_calibrated
     m.CONFIG.hardware.calibration_file = cal_file
     m.CONFIG.hardware.fir_num_taps = sentinel.FIR_TAPS
-    m.AUDIO.SAMPLE_RATE = 48000  # int() is called on this in _init_calibration
+    m.AUDIO.SAMPLE_RATE = 48000  # int() called on this in _init_calibration
     m.HARDWARE.NOMINAL_SENSITIVITY_DBFS = sentinel.SENSITIVITY_DBFS
     m.HARDWARE.REFERENCE_DBSPL = sentinel.REFERENCE_DBSPL
     return m
@@ -40,8 +41,10 @@ def _make_worker(save_calibrated=False, mock_calibrator=None):
     upload_q = queue.Queue()
     mock_settings = _make_settings(save_calibrated=save_calibrated)
 
-    with patch("app.services.recorder_transformer_worker.settings", mock_settings), \
-         patch("app.services.recorder_transformer_worker.CalibratorTransformer") as MockCal:
+    with (
+        patch("app.services.recorder_transformer_worker.settings", mock_settings),
+        patch("app.services.recorder_transformer_worker.CalibratorTransformer") as MockCal,
+    ):
         if mock_calibrator is not None:
             MockCal.return_value = mock_calibrator
         worker = RecorderTransformerWorker(raw_q, upload_q)
