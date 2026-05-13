@@ -174,6 +174,12 @@ class ServiceConfig(BaseModel):
     # Privacy mode state file (shared memory, cleared on reboot)
     privacy_mode_state_file: Path = Path("/dev/shm/privacy_mode")
 
+    # Queue / Pipeline
+    max_pending_uploads: int = 50
+    recording_max_seconds: int = 60
+    recording_post_roll_seconds: int = 10
+    metrics_csv_buffer_file: str = "metrics_buffer.csv"
+
     # Operational Settings
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
@@ -191,6 +197,7 @@ class ServiceConfig(BaseModel):
 
 class HardwareConfig(BaseModel):
     calibration_file: str | None = None
+    fir_num_taps: int = 1024
 
 
 class AppConfig(BaseModel):
