@@ -11,10 +11,10 @@ Year: 2026
 import logging
 import time
 
-import numpy as np
-from umik_base_app import AudioSink
+from umik_base_app import AudioSink, PipelineContext as AudioCtx
 
 from ..context import PipelineContext
+from ..services.privacy_mode import PrivacyMode
 from ..services.telegram_bot_client import TelegramBotClient
 from ..settings import settings
 
@@ -39,6 +39,7 @@ class PolicyEngineSink(AudioSink):
 
         # Services
         self._telegram = TelegramBotClient()
+        self._privacy = PrivacyMode()
 
         # Cooldown State Management
         # Prevents spamming alerts for the same event (e.g. Barking for 10 minutes)
@@ -51,7 +52,7 @@ class PolicyEngineSink(AudioSink):
 
         logger.info(f"🧠 Policy Engine Initialized. Loaded {len(self._policies)} rules.")
 
-    def handle_audio(self, audio_chunk: np.ndarray, timestamp: float) -> None:
+    def handle(self, ctx: AudioCtx) -> None:
         """
         Evaluates all policies against the current audio context.
 
@@ -94,8 +95,13 @@ class PolicyEngineSink(AudioSink):
         )
 
         current_time = time.time()
+        is_privacy_active = self._privacy.is_active()
 
         for policy in self._policies:
+            if is_privacy_active and not policy.ignore_privacy:
+                logger.debug(f"🔒 Privacy active — skipping policy '{policy.name}'.")
+                continue
+
             try:
                 # 1. Check Condition (Dynamic Eval)
                 condition_met = eval(policy.condition, {"__builtins__": None}, eval_scope)
