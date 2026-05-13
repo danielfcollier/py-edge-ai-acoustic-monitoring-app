@@ -24,18 +24,17 @@ from .calibration import setup_calibration
 from .context import PipelineContext
 from .services.cloud_uploader_service import CloudUploaderService
 from .services.health_monitor_service import HealthMonitorService
+from .services.recorder_transformer_worker import RecorderTransformerWorker
 from .services.system_heartbeat_service import SystemHeartbeatService
 from .settings import settings
 from .sinks.feature_extractor_sink import FeatureExtractorSink
 from .sinks.policy_engine_sink import PolicyEngineSink
-from .sinks.smart_recorder_sink import SmartRecorderSink
+from .sinks.smart_buffer_sink import SmartBufferSink
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="keras.src.export.tf2onnx_lib")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-
-MAX_PENDING_FILE_UPLOADS = 50
 
 # Suppress noisy HTTP libraries
 for lib in ["httpx", "httpcore"]:
@@ -89,7 +88,9 @@ def main():
 
     app_config = setup_calibration(base_args)
 
-    upload_queue = queue.Queue(maxsize=MAX_PENDING_FILE_UPLOADS)
+    max_pending = settings.CONFIG.services.max_pending_uploads
+    raw_queue = queue.Queue(maxsize=max_pending)
+    upload_queue = queue.Queue(maxsize=max_pending)
 
     # Ensure Output Path exists
     output_path = settings.CONFIG.services.recording_output_path
@@ -112,6 +113,12 @@ def main():
     system_heartbeat.start()
     services.append(system_heartbeat)
 
+    # Service: Recorder Transformer (FIR calibration, cold path)
+    if app_config.run_mode in ["monolithic", "consumer"]:
+        transformer = RecorderTransformerWorker(raw_queue=raw_queue, upload_queue=upload_queue)
+        transformer.start()
+        services.append(transformer)
+
     # Service: Cloud Upload (Consumer)
     if app_config.run_mode in ["monolithic", "consumer"]:
         uploader = CloudUploaderService(upload_queue=upload_queue, output_path=output_path)
@@ -125,8 +132,8 @@ def main():
     pipeline.add_sink(FeatureExtractorSink(context))
     pipeline.add_sink(PolicyEngineSink(context))
 
-    # Sink: Smart Recorder (Producer)
-    pipeline.add_sink(SmartRecorderSink(context, upload_queue))
+    # Sink: Smart Buffer (captures raw audio, hands off to transformer)
+    pipeline.add_sink(SmartBufferSink(context, raw_queue))
 
     # Application Start
     app = AudioBaseApp(app_config=app_config, pipeline=pipeline)
