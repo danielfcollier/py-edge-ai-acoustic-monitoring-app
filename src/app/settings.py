@@ -171,6 +171,9 @@ class ServiceConfig(BaseModel):
     # 🆕 Storage Path (Default: ./recordings)
     recording_output_path: Path = Path("recordings")
 
+    # Privacy mode state file (shared memory, cleared on reboot)
+    privacy_mode_state_file: Path = Path("/dev/shm/privacy_mode")
+
     # Operational Settings
     retry_attempts: int = 3
     retry_delay_seconds: int = 5

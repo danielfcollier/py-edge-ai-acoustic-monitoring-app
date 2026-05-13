@@ -175,7 +175,8 @@ class FeatureExtractorSink(AudioSink):
             if not ctx.gain_applied and ctx.sensitivity_dbfs is not None:
                 self._linear_gain = 10.0 ** (abs(ctx.sensitivity_dbfs) / 20.0)
                 logger.info(
-                    f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost (based on Sensitivity {ctx.sensitivity_dbfs}dB)"
+                    f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost "
+                    f"(based on Sensitivity {ctx.sensitivity_dbfs}dB)"
                 )
             else:
                 self._linear_gain = 1.0
