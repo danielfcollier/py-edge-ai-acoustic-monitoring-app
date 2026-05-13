@@ -21,6 +21,7 @@ from ..settings import SystemMetrics, settings
 
 logger = logging.getLogger(__name__)
 
+
 class SmartBufferSink(AudioSink):
     """
     State-machine recorder. Captures raw pre-roll + live audio,
@@ -55,11 +56,22 @@ class SmartBufferSink(AudioSink):
         if not self._csv_path.exists():
             try:
                 with open(self._csv_path, "w", newline="") as f:
-                    csv.writer(f).writerow([
-                        "id", "timestamp", "label", "confidence",
-                        "rms", "dbspl", "flux",
-                        "cpu", "ram", "temp", "disk", "disk_attached",
-                    ])
+                    csv.writer(f).writerow(
+                        [
+                            "id",
+                            "timestamp",
+                            "label",
+                            "confidence",
+                            "rms",
+                            "dbspl",
+                            "flux",
+                            "cpu",
+                            "ram",
+                            "temp",
+                            "disk",
+                            "disk_attached",
+                        ]
+                    )
             except Exception as e:
                 logger.error(f"Failed to initialize CSV: {e}")
 
@@ -110,17 +122,22 @@ class SmartBufferSink(AudioSink):
         conf = self._context.current_confidence
         cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
 
-        self._write_csv([
-            self._event_id,
-            datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-            label,
-            f"{conf:.2f}",
-            f"{metrics.get('rms', 0.0):.4f}",
-            f"{metrics.get('dbspl', 0.0):.1f}",
-            f"{metrics.get('flux', 0.0):.1f}",
-            f"{cpu:.1f}", f"{ram:.1f}", f"{temp:.1f}",
-            f"{disk:.1f}", f"{disk_attached:.1f}",
-        ])
+        self._write_csv(
+            [
+                self._event_id,
+                datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+                label,
+                f"{conf:.2f}",
+                f"{metrics.get('rms', 0.0):.4f}",
+                f"{metrics.get('dbspl', 0.0):.1f}",
+                f"{metrics.get('flux', 0.0):.1f}",
+                f"{cpu:.1f}",
+                f"{ram:.1f}",
+                f"{temp:.1f}",
+                f"{disk:.1f}",
+                f"{disk_attached:.1f}",
+            ]
+        )
 
     def _write_csv(self, row):
         try:
@@ -138,9 +155,7 @@ class SmartBufferSink(AudioSink):
         max_samples = int(self._max_duration_sec * self._sample_rate)
 
         if len(full_audio) > max_samples:
-            logger.warning(
-                f"⚠️ Recording exceeded limit ({len(full_audio)} samples). Truncating."
-            )
+            logger.warning(f"⚠️ Recording exceeded limit ({len(full_audio)} samples). Truncating.")
             full_audio = full_audio[:max_samples]
 
         duration = len(full_audio) / self._sample_rate
