@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from umik_base_app import AudioSink
+from umik_base_app import AudioSink, PipelineContext as AudioCtx
 from umik_base_app.transformers.calibrator_transformer import CalibratorTransformer
 
 from ..context import PipelineContext
@@ -138,7 +138,7 @@ class SmartRecorderSink(AudioSink):
             except Exception as e:
                 logger.error(f"Failed to initialize CSV: {e}")
 
-    def handle_audio(self, audio_chunk: np.ndarray, timestamp: float) -> None:
+    def handle(self, ctx: AudioCtx) -> None:
         current_time = time.time()
 
         triggers = ["record_evidence", "cloud_upload"]
@@ -174,7 +174,7 @@ class SmartRecorderSink(AudioSink):
                 self._stop_recording()
                 return
 
-            self._process_chunk(audio_chunk, current_time)
+            self._process_chunk(ctx.audio, current_time)
 
     def _start_recording(self, now: float):
         self._event_id = str(uuid.uuid4())
