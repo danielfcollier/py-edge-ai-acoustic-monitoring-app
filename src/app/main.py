@@ -26,6 +26,7 @@ from .services.cloud_uploader_service import CloudUploaderService
 from .services.health_monitor_service import HealthMonitorService
 from .services.recorder_transformer_worker import RecorderTransformerWorker
 from .services.system_heartbeat_service import SystemHeartbeatService
+from .services.telegram_command_receiver import TelegramCommandReceiver
 from .settings import settings
 from .sinks.basic_metrics_sink import BasicMetricsSink
 from .sinks.feature_extractor_sink import FeatureExtractorSink
@@ -109,6 +110,11 @@ def main():
     health_monitor = HealthMonitorService()
     health_monitor.start()
     services.append(health_monitor)
+
+    # Service: Telegram Command Receiver (privacy mode, etc.)
+    telegram_cmds = TelegramCommandReceiver()
+    telegram_cmds.start()
+    services.append(telegram_cmds)
 
     # Service: System Heartbeat (CSV Logger)
     system_heartbeat = SystemHeartbeatService()
