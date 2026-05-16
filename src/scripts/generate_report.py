@@ -29,6 +29,7 @@ from tabulate import tabulate  # noqa: E402
 from weasyprint import CSS, HTML  # noqa: E402
 
 from app.settings import settings  # noqa: E402
+from scripts.reporting import process_data  # noqa: E402
 
 # --- CONFIGURATION ---
 REPORT_DIR = Path("reports")
@@ -38,59 +39,6 @@ ASSETS_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("Analytics")
-
-
-class CategoryManager:
-    """
-    Manages mapping from Raw Labels (YAMNet or Speech Rec) to Report Categories.
-    """
-
-    DEFAULT_YAMNET_MAP = {
-        "Dog": "Animal",
-        "Bark": "Animal",
-        "Howl": "Animal",
-        "Yip": "Animal",
-        "Cat": "Animal",
-        "Meow": "Animal",
-        "Bird": "Animal",
-        "Shouting": "Vocals",
-        "Scream": "Vocals",
-        "Yelling": "Vocals",
-        "Speech": "Vocals",
-        "Child": "Vocals",
-        "Laughter": "Vocals",
-        "Music": "Music",
-        "Beat": "Music",
-        "Drum": "Music",
-        "Bass": "Music",
-        "Knock": "Impact",
-        "Door": "Impact",
-        "Slam": "Impact",
-        "Glass": "Impact",
-        "Gunshot": "Impact",
-        "Explosion": "Impact",
-        "Hammer": "Construction",
-        "Drill": "Construction",
-        "Saw": "Construction",
-        "Engine": "Traffic",
-        "Car": "Traffic",
-        "Siren": "Traffic",
-    }
-
-    def __init__(self, yaml_mapping: dict):
-        self.mapping = self.DEFAULT_YAMNET_MAP.copy()
-        if yaml_mapping:
-            self.mapping.update(yaml_mapping)
-
-    def get_category(self, label: str) -> str:
-        if label in self.mapping:
-            return self.mapping[label]
-
-        for key, cat in self.mapping.items():
-            if key in label:
-                return cat
-
-        return "Other Noise"
 
 
 def fetch_data_from_s3(days):
@@ -140,41 +88,13 @@ def fetch_data_from_s3(days):
     return pd.concat(dfs, ignore_index=True)
 
 
-def process_data(df):
-    """Cleans data and applies limits from YAML."""
-    if df.empty:
-        return df
-
-    config = settings.CONFIG.reporting
-    cat_manager = CategoryManager(config.category_mapping)
-
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.set_index("timestamp").sort_index()
-
-    cols = ["dbspl", "confidence", "duration", "cpu_percent", "temp_c"]
-    for c in cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    df["Category"] = df["event_type"].apply(cat_manager.get_category)
-
-    limit_day = config.limits.day_db
-    limit_night = config.limits.night_db
-
-    df["is_night"] = (df.index.hour >= 22) | (df.index.hour < 7)
-    df["limit"] = df["is_night"].apply(lambda x: limit_night if x else limit_day)
-    df["violation"] = df["dbspl"] > df["limit"]
-
-    return df
-
-
 def generate_charts(df):
     chart_paths = {}
     sns.set_theme(style="whitegrid", context="paper")
 
     # 1. Timeline Chart
     plt.figure(figsize=(10, 5))
-    sns.scatterplot(data=df, x=df.index, y="dBSPL", hue="Category", alpha=0.7)
+    sns.scatterplot(data=df, x=df.index, y="dbspl", hue="Category", alpha=0.7)
 
     limits = settings.CONFIG.reporting.limits
     plt.axhline(limits.day_db, color="orange", ls="--", label=f"Day Limit ({limits.day_db}dB)")
@@ -182,7 +102,7 @@ def generate_charts(df):
 
     plt.gca().xaxis.set_major_formatter(DateFormatter("%d/%m %Hh"))
     plt.title("Noise Events vs. Regulatory Limits")
-    plt.ylabel("SPL (dB)")
+    plt.ylabel("dBSPL")
     plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
     plt.tight_layout()
 
@@ -275,7 +195,7 @@ if __name__ == "__main__":
     days = settings.CONFIG.reporting.days_to_report
     df = fetch_data_from_s3(days)
     if not df.empty:
-        df = process_data(df)
+        df = process_data(df, settings.CONFIG.reporting)
         charts = generate_charts(df)
         md = create_markdown_report(df, charts)
         save_report(md)
