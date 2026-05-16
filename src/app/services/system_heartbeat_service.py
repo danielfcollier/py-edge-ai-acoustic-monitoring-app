@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from ..services.prometheus_service import PrometheusService
 from ..settings import SystemMetrics, settings
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class SystemHeartbeatService:
 
         try:
             cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
+            PrometheusService().update_system(cpu, temp, ram=ram, disk=disk, disk_attached=disk_attached)
             # id, timestamp, label, confidence, rms, dbspl, flux, cpu, ram, temp, rom, rom attached
             row = [
                 f"{uuid.uuid4()}",
