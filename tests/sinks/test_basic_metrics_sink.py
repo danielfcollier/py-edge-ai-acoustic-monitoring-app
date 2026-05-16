@@ -63,18 +63,18 @@ class TestBasicMetricsSink:
 
         assert len(app_context.audio_pre_buffer) == before + 1
 
-    def test_prometheus_uses_silence_floor_when_uncalibrated(self, app_context):
+    def test_prometheus_omits_dbspl_when_uncalibrated(self, app_context):
         sink, mock_prom = _make_sink(app_context)
         sink.handle(_ctx(can_dbspl=False))
 
-        dbspl_arg = mock_prom.update_audio.call_args[0][0]
-        assert dbspl_arg == 30.0
+        dbspl_kwarg = mock_prom.update_audio.call_args.kwargs.get("dbspl")
+        assert dbspl_kwarg is None
 
     def test_prometheus_uses_actual_dbspl_when_calibrated(self, app_context):
         sink, mock_prom = _make_sink(app_context)
         audio = np.ones(4800, dtype=np.float32) * 0.5
         sink.handle(_ctx(audio, can_dbspl=True, sensitivity_dbfs=-18.0, reference_dbspl=94.0))
 
-        dbspl_arg = mock_prom.update_audio.call_args[0][0]
-        assert dbspl_arg > 0.0
-        assert dbspl_arg != 30.0
+        dbspl_kwarg = mock_prom.update_audio.call_args.kwargs.get("dbspl")
+        assert dbspl_kwarg is not None
+        assert dbspl_kwarg > 0.0
