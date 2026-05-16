@@ -42,6 +42,7 @@ services:
   cloud:
     provider: "magalu"
     bucket_name: "acoustic-logs"
+    region: "br-se1"       # Magalu: br-se1 | br-ne1   AWS: us-east-1 | sa-east-1 | ...
 
 # --- AI Model Configuration ---
 feature_extractor:

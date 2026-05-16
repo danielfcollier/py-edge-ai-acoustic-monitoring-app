@@ -1,105 +1,75 @@
 # Contributing to py-edge-ai-acoustic-monitoring-app
 
-Thank you for your interest in contributing to the **py-edge-ai-acoustic-monitoring-app**! I welcome contributions to help improve this acoustic monitoring app.
+Thank you for your interest in contributing! This guide covers how to set up your environment and the expected workflow.
 
-This guide will help you set up your development environment and understand the workflows.
+## Prerequisites
 
-## 🛠️ Prerequisites
+- **Python 3.11** — [Download](https://www.python.org/downloads/)
+- **uv** — fast Python package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Make** — standard build tool (pre-installed on Linux/macOS)
+- **libportaudio2** and **libsndfile1** — installed automatically by `make setup`
 
-Before you begin, ensure you have the following installed on your system:
+## Setup
 
-* **Python 3.12+**: [Download Python](https://www.python.org/downloads/)
-* **uv**: An extremely fast Python package installer and resolver.
-    * [Installation Guide for uv](https://github.com/astral-sh/uv) (e.g., `curl -LsSf https://astral.sh/uv/install.sh | sh`)
-* **Make**: Standard build tool (usually pre-installed on Linux/macOS).
+```bash
+git clone https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git
+cd py-edge-ai-acoustic-monitoring-app
 
-## 🚀 Setup
+# Install system libraries and create .venv with Python 3.11
+make install
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git)
-    cd py-edge-ai-acoustic-monitoring-app
-    ```
+## Development Workflow
 
-2.  **Install dependencies:**
-    It's used `uv` to manage the virtual environment and dependencies efficiently. The `make install` command handles everything for you (syncing both production and development dependencies).
-    ```bash
-    make install
-    ```
-    *This creates a virtual environment in `.venv/`.*
+### Code quality
 
-3.  **Activate the environment:**
-    ```bash
-    source .venv/bin/activate
-    ```
+```bash
+make lint        # Ruff — check for style violations and errors
+make format      # Ruff — autoformat and fix imports
+```
 
-## 💻 Development Workflow
-
-Use a `Makefile` to streamline common development tasks.
-
-### Code Quality & Linting
-Enforce strict code quality standards using **Ruff** (for linting and formatting) and **MyPy** (for static type checking).
-
-* **Run Linter:** Checks for style violations and potential errors.
-    ```bash
-    make lint
-    ```
-* **Format Code:** Automatically fixes formatting issues.
-    ```bash
-    make format
-    ```
-* **Spell Check:** Checks for spelling errors in code and documentation.
-    ```bash
-    make spell-check
-    ```
+All code uses Ruff with `line-length = 120` and targets Python 3.11.
 
 ### Testing
-Use `pytest` for unit testing.
 
-* **Run Unit Tests:**
-    ```bash
-    make test
-    ```
-* **Run Tests with Coverage Report:**
-    This generates a coverage report to help identify untested code paths.
-    ```bash
-    make coverage
-    ```
+```bash
+make test        # Run pytest
+make coverage    # pytest with term + HTML coverage report
+```
 
-### Running the Basic Applications
-You can run the built-in applications directly using `make` targets.
+Tests live in `tests/` mirroring the `src/app/` structure. Use `unittest.mock.sentinel` for arbitrary pass-through values; use real numeric values only where the code performs arithmetic on them.
 
-* **Decibel Meter:** Runs the real-time decibel meter app.
-    ```bash
-    # Run with default settings (uses default mic)
-    make decibel-meter-default-mic
-    
-    # Run specifically with a UMIK-1 (requires calibration file path in F variable)
-    make decibel-meter-umik-1 F="path/to/calib.txt"
-    ```
+### Running locally
 
-* **Audio Recorder:** Runs the recording utility.
-    ```bash
-    # Record with default mic
-    make record-default-mic
-    
-    # Record with UMIK-1 (requires calibration file)
-    make record-umik-1 F="path/to/calib.txt"
-    ```
+```bash
+make run               # Auto-detect microphone
+make run-default       # Force default PC microphone
+make list-devices      # Print available audio input devices
+```
 
-*(Note: Use `make help` to see all available commands).*
+### Other targets
 
-## 🏗️ Project Structure & Standards
+```bash
+make setup-models      # Download YAMNet TFLite model and class map
+make report            # Generate analytics PDF from cloud metrics
+make clean             # Remove .pyc / __pycache__
+make clean-all         # Also remove .venv and build artifacts
+```
 
-* **Strict Typing:** Enforce static typing throughout the codebase using `mypy`. Please ensure all new functions and classes have type hints.
-* **Formatting:** All code must be formatted with `ruff`. The CI pipeline will fail if code is not properly formatted.
-* **CI Pipeline:** Every Pull Request runs the `make lint` and `make coverage` targets via GitHub Actions. Ensure these pass locally before submitting your PR.
+Run `make help` to see all targets with descriptions.
 
-## 📝 Submitting a Pull Request
+## Project Standards
 
-1.  Create a new branch for your feature or fix (`git checkout -b feature/my-new-feature`).
-2.  Commit your changes (`git commit -am 'Add some feature'`).
-3.  Push to the branch (`git push origin feature/my-new-feature`).
-4.  Open a Pull Request against the `main` branch.
+- **Type hints** on all public functions and class methods
+- **No comments** unless the _why_ is non-obvious (hidden constraint, workaround, subtle invariant)
+- **No module-level magic constants** — config values belong in `settings.py` (`ServiceConfig`, `FeatureExtractorConfig`, etc.)
+- **Sentinel values** in tests for arbitrary pass-through data; real values where arithmetic or `if` branches depend on them
 
-Happy Coding! 🎧
+## Submitting a Pull Request
+
+1. Create a branch: `git checkout -b feat/my-feature`
+2. Keep commits focused; reference the batch/component in the message
+3. Ensure `make lint` and `make test` both pass
+4. Open a PR against `main`
+
+Happy coding! 🎧
