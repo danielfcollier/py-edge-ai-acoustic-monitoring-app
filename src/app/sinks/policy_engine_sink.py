@@ -117,8 +117,7 @@ class PolicyEngineSink(AudioSink):
                     can_alert = self._should_alert(policy.name, current_time)
                     if not can_alert and "telegram_alert" in policy.actions:
                         remaining = int(
-                            self._alert_cooldown
-                            - (current_time - self._last_alert_times.get(policy.name, 0))
+                            self._alert_cooldown - (current_time - self._last_alert_times.get(policy.name, 0))
                         )
                         logger.debug(f"   ⏳ Alert cooldown for '{policy.name}' ({remaining}s remaining).")
 

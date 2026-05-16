@@ -7,17 +7,20 @@ Supported commands:
   /privacy on <duration>   activate privacy mode (e.g. 2h, 30m, 1d)
   /privacy off             deactivate privacy mode
   /privacy status          report current privacy state
+  /status                  system snapshot (label, privacy, queues, CPU/RAM/temp/disk)
 """
 
 import asyncio
 import logging
+import queue
 import threading
 
 from telegram import Bot
 
+from ..context import PipelineContext
 from ..services.privacy_mode import PrivacyMode
 from ..services.telegram_bot_client import TelegramBotClient
-from ..settings import settings
+from ..settings import SystemMetrics, settings
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,16 @@ class TelegramCommandReceiver:
     Runs in a daemon thread; harmless to skip if Telegram is disabled.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        context: PipelineContext | None = None,
+        raw_queue: queue.Queue | None = None,
+        upload_queue: queue.Queue | None = None,
+    ):
+        self._context = context
+        self._raw_queue = raw_queue
+        self._upload_queue = upload_queue
+
         self._enabled = settings.CONFIG.services.telegram_enabled
         self._authorized_chat_id = str(settings.TELEGRAM_CHAT_ID or "")
         self._bot_client = TelegramBotClient()
@@ -57,9 +69,7 @@ class TelegramCommandReceiver:
         if not self._enabled:
             logger.info("📱 Telegram disabled — Command Receiver not started.")
             return
-        threading.Thread(
-            target=self._run, name="TelegramCmdReceiver", daemon=True
-        ).start()
+        threading.Thread(target=self._run, name="TelegramCmdReceiver", daemon=True).start()
         logger.info("📱 Telegram Command Receiver started.")
 
     def stop(self):
@@ -102,6 +112,8 @@ class TelegramCommandReceiver:
 
         if cmd == "privacy":
             self._handle_privacy(args)
+        elif cmd == "status":
+            self._handle_status()
         else:
             logger.debug(f"Unhandled command: {cmd}")
 
@@ -110,20 +122,17 @@ class TelegramCommandReceiver:
 
         if not args:
             self._reply(
-                "Usage: /privacy on <duration> | /privacy off | /privacy status\n"
-                "Duration examples: 30m · 2h · 1d"
+                "Usage: /privacy on <duration> | /privacy off | /privacy status\nDuration examples: 30m · 2h · 1d"
             )
             return
 
         sub = args[0].lower()
 
         if sub == "on":
-            duration_str = args[1] if len(args) > 1 else "1h"
+            duration_str = args[1] if len(args) > 1 else "4h"
             duration_sec = _parse_duration(duration_str)
             if duration_sec is None:
-                self._reply(
-                    f"❌ Invalid duration '{duration_str}'. Use: 30m, 2h, 1d"
-                )
+                self._reply(f"❌ Invalid duration '{duration_str}'. Use: 30m, 2h, 1d")
                 return
             pm.activate(duration_sec)
             self._reply(f"🔒 Privacy mode ON for {duration_str}.")
@@ -141,6 +150,32 @@ class TelegramCommandReceiver:
 
         else:
             self._reply(f"Unknown subcommand '{sub}'. Use: on, off, status")
+
+    def _handle_status(self) -> None:
+        lines = ["📊 Edge Monitor"]
+
+        # Last detected event
+        if self._context is not None:
+            label = self._context.current_event_label
+            conf = self._context.current_confidence
+            lines.append(f"\n👂 {label} ({conf:.2f})")
+
+        # Privacy mode
+        pm_active = PrivacyMode().is_active()
+        icon = "🔒" if pm_active else "🔓"
+        lines.append(f"{icon} Privacy: {'active' if pm_active else 'inactive'}")
+
+        # Queue depths
+        raw_depth = self._raw_queue.qsize() if self._raw_queue is not None else 0
+        upload_depth = self._upload_queue.qsize() if self._upload_queue is not None else 0
+        lines.append(f"\n📤 Raw: {raw_depth} · Upload: {upload_depth}")
+
+        # System metrics
+        cpu, ram, temp, disk, _ = SystemMetrics.get_stats()
+        lines.append(f"🖥️ CPU {cpu:.0f}% · RAM {ram:.0f}% · {temp:.0f}°C")
+        lines.append(f"💾 Disk {disk:.0f}%")
+
+        self._reply("\n".join(lines))
 
     def _reply(self, text: str) -> None:
         self._bot_client.send_message_sync(text)

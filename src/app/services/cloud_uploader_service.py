@@ -72,25 +72,37 @@ class CloudUploaderService:
 
     def _init_provider(self):
         """
-        Initializes the appropriate cloud storage provider (AWS or Magalu) based on settings.
+        Initializes the appropriate cloud storage provider based on settings.
         """
         cfg = self._cloud_cfg
         if cfg.provider == "magalu":
-            logger.info("☁️  Using Magalu Cloud (S3 Compatible)")
+            # MAGALU_URL in .env is an explicit override; otherwise derive from region.
+            endpoint = settings.MAGALU_URL or f"https://{cfg.region}.magaluobjects.com"
+            logger.info(f"☁️  Using Magalu Cloud — {endpoint}")
             return S3Provider(
-                access_key=settings.MAGALU_ACCESS_KEY or cfg.aws_access_key,
-                secret_key=settings.MAGALU_SECRET_KEY or cfg.aws_secret_key,
+                access_key=settings.MAGALU_ACCESS_KEY,
+                secret_key=settings.MAGALU_SECRET_KEY,
                 bucket_name=cfg.bucket_name,
-                endpoint_url=settings.MAGALU_URL,
+                endpoint_url=endpoint,
             )
         elif cfg.provider == "aws":
-            logger.info("☁️  Using AWS S3")
+            logger.info(f"☁️  Using AWS S3 — region: {cfg.region}")
+            # Credentials are read from env automatically by boto3
+            # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).
             return S3Provider(
-                access_key=cfg.aws_access_key,
-                secret_key=cfg.aws_secret_key,
+                access_key=None,
+                secret_key=None,
                 bucket_name=cfg.bucket_name,
-                region=cfg.aws_region,
+                region=cfg.region,
             )
+        elif cfg.provider == "gcp":
+            import os
+
+            from .cloud_storage_providers import GCPStorageProvider
+
+            creds = cfg.gcp_credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            logger.info("☁️  Using GCP Cloud Storage")
+            return GCPStorageProvider(credentials_path=creds, bucket_name=cfg.bucket_name)
         return None
 
     def start(self):
@@ -301,4 +313,4 @@ class CloudUploaderService:
         lines.append(f"⏱️ Duration: {event['duration_sec']:.1f}s")
 
         msg = "\n".join(lines)
-        self._telegram.send_message_sync(msg, stop_event=self._stop_event)
+        self._telegram.send_message_sync(msg)

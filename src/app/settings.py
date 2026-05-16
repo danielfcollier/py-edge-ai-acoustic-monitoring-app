@@ -148,15 +148,10 @@ class FeatureExtractorConfig(BaseModel):
 class CloudConfig(BaseModel):
     provider: Literal["magalu", "aws", "gcp"] = "magalu"
     bucket_name: str = "acoustic-logs"
-
-    # S3 / Magalu / AWS Credentials
-    aws_access_key: str | None = Field(None, alias="AWS_ACCESS_KEY_ID")
-    aws_secret_key: str | None = Field(None, alias="AWS_SECRET_ACCESS_KEY")
-    aws_region: str | None = Field("us-east-1", alias="AWS_REGION")
-    s3_endpoint: str | None = None  # For Magalu/MinIO
-
-    # GCP Credentials
-    gcp_credentials_path: str | None = Field(None, alias="GOOGLE_APPLICATION_CREDENTIALS")
+    # Magalu: "br-se1" | "br-ne1"   AWS: "us-east-1" | "sa-east-1" | ...
+    region: str = "br-se1"
+    # GCP only: path to service account JSON. Falls back to GOOGLE_APPLICATION_CREDENTIALS env var.
+    gcp_credentials_path: str | None = None
 
 
 class ServiceConfig(BaseModel):
@@ -225,7 +220,7 @@ class AppSettings(BaseSettings):
     MAGALU_ACCESS_KEY: str | None = Field(None, alias="MAGALU_KEY")
     MAGALU_SECRET_KEY: str | None = Field(None, alias="MAGALU_SECRET")
     MAGALU_BUCKET: str = "acoustic-logs"
-    MAGALU_URL: str = "https://br-se1.magaluobjects.com"
+    MAGALU_URL: str | None = None  # explicit endpoint override; derived from region when absent
 
     # --- Logging Levels (Controlled via .env) ---
     LOG_LEVEL_MAIN: str = "INFO"
