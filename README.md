@@ -1,235 +1,187 @@
-https://www.drsilencio.com.br/como-provar-que-o-vizinho-faz-barulho/
-https://www.ambietica.com.br/Noticias/358/Laudo-e-Monitoramento-de-Ruidos
-https://roomonitor.com/en/prices/
-https://www.minut.com/pricing
+# 🎙️ Edge AI Acoustic Monitoring App
 
+A privacy-aware, edge-deployed acoustic monitoring system that runs on **any Linux machine** — Raspberry Pi, server, or desktop — with a microphone. It uses YAMNet (Google's audio classification model) to identify sound events in real time, applies a configurable security policy, records evidence audio, and uploads to cloud storage — while keeping the hot path fast enough for continuous 24/7 monitoring.
 
-1. Setting up Multiple Wi-Fi Networks
+> 🍎 🪟 macOS and Windows may work with minor adjustments — GPIO heartbeat and `/dev/shm` privacy state are Linux-specific features; both can be disabled in config.
 
-$ sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
+## ✨ Features
 
-    ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-    update_config=1
-    country=BR  <-- Ensure this matches your location (Brazil)
+- 🧠 **Real-time AI classification** via YAMNet (521 sound classes: dog barks, glass breaks, voices, etc.)
+- 🚪 **Two-stage Sound Activity Detection (SAD)** gate — cheap RMS/Flux check before expensive AI inference
+- 🎛️ **FIR calibration** applied async in a background worker, so the recording pipeline never stalls
+- 📋 **YAML-driven policy engine** with per-rule `ignore_privacy` flag for critical events
+- 🔒 **Privacy mode** — toggle via Telegram command; state survives in-process restarts (stored in `/dev/shm`)
+- 📱 **Telegram bot**: receive alerts _and_ control the device with `/privacy` commands
+- ☁️ **Cloud upload** to Magalu Object Storage, AWS S3, or GCP (with offline disk fallback)
+- 📊 **Prometheus metrics** export + Grafana-ready dashboards
+- 💓 **Health monitoring**: GPIO heartbeat pin + healthchecks.io ping
 
-    # Primary Network (Home) - Priority 10
-    network={
-        ssid="My_Home_WiFi"
-        psk="home_password"
-        priority=10
-    }
+## 🖥️ Hardware
 
-    # Backup Network (Hotspot) - Priority 5
-    network={
-        ssid="My_Phone_Hotspot"
-        psk="hotspot_password"
-        priority=5
-    }
+The app runs on **any Linux machine** — Raspberry Pi, server, or desktop. Storage: USB SSD recommended for recordings.
 
+### 🎙️ Microphone support
 
-Ideia:
-- monitorar som para identificar ruídos ou barulhos
-- principal: latidos, vozes e outros sons indesejados
-- otimizar utilizando ML, salvando chunks de audio
-- agregar audios e enviar para nuvem
-- envio de métricas em modo push para servidor
-- criação de relatório de eventos geral e detalhado
-- - geral: estatísticas vindas do painel do grafana, dias, frequência, origem, intensidade
-- - detalhado: listagem completa de arquivos de gravações por dia para ser disponbilizada em modo texto com referência a links HTML (criar sistema de navegação HTML simples)
-- possibilidade: fotografia com timestamp
+Three tiers — pick whatever you have:
 
-Extra:
-- servidor com prometheus e storage de dados
-- bucket para armazenamento por cliente
-- piloto para validar processo 
+| Tier | Examples | What you get |
+|---|---|---|
+| 🖥️ Built-in / system default | Laptop mic, any system audio input | AI classification + recording; no calibrated dBSPL |
+| 🔌 Generic USB microphone | Any USB mic | Same as above with better audio quality |
+| 🎛️ Calibrated measurement mic | See table below | Accurate dBSPL + FIR frequency correction |
 
+Calibrated microphones are **auto-detected by name** at startup when a calibration file is configured — no manual device ID needed.
 
-Clientes potenciais:
-- engenheiros de laudos
-- advogados
-- síndicos
-- imobiliárias
-- inquilos
+#### Supported calibrated microphones (via `umik-base-app`)
 
-Necessito:
-- Raspberry Pi: qual versão aguenta? precisa de GPU?
-- Caixa para Raspberry e Microfone
-- Memória para Raspberry
-- Conexão com internet?
-- Health check alarm?
-https://healthchecks.io/
+| Microphone | Manufacturer | Connection | Sample Rates |
+|---|---|---|---|
+| UMIK-1 | miniDSP | USB | 48 kHz |
+| UMIK-2 | miniDSP | USB | 48 / 96 / 192 kHz |
+| UMM-6 | Dayton Audio | USB | 48 kHz |
+| XREF 20 | Sonarworks | USB | 48 kHz |
+| EMX-7150 | iSEMcon | USB | 48 / 96 kHz |
+| MM 1 | Beyerdynamic | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
+| M23 | Earthworks | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
+| M30 | Earthworks | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
+| TM1 Plus | Audix | Analog (via interface) | 44.1 / 48 / 96 kHz |
 
+Analog microphones require an external USB audio interface and `--device-id` to select the interface.
 
-import requests
-import time
+## 🏗️ Architecture
 
-# ... your main app logic ...
+See [ARCHITECTURE.md](ARCHITECTURE.md) for diagrams. In brief:
 
-while True:
-    try:
-        # Do your work
-        run_my_process()
-
-        # Send Heartbeat
-        requests.get("https://hc-ping.com/your-uuid-here")
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-    time.sleep(60)
-
-```mermaid
-graph LR
-    subgraph Edge_Device [Raspberry Pi 4B]
-        direction TB
-        
-        subgraph Hardware
-            Mic[Microphone]
-            RAM_Disk[("/dev/shm (RAM)")]
-        end
-
-        subgraph Process_A [Producer Service (High Priority)]
-            Listener[Audio Listener]
-            ZMQ_Push[ZMQ PUSH Socket]
-        end
-
-        subgraph Process_B [Consumer Service (Analysis)]
-            ZMQ_Pull[ZMQ PULL Socket]
-            Brain[Analysis & Policy Engine]
-            TeleBot[Telegram Bot Thread]
-        end
-    end
-
-    subgraph External
-        User((User))
-        TelegramAPI[Telegram API]
-        MagaluCloud[Magalu Object Storage]
-    end
-
-    %% Connections
-    Mic -->|Raw Audio| Listener
-    Listener -->|Chunk + Timestamp| ZMQ_Push
-    ZMQ_Push -.->|TCP:5555| ZMQ_Pull
-    ZMQ_Pull --> Brain
-    
-    Brain -->|Alerts| TelegramAPI
-    Brain -->|WAV Files| MagaluCloud
-    Brain -->|Metadata CSV| MagaluCloud
-    
-    User -->|Commands /privacy| TeleBot
-    TeleBot -->|Write Flag| RAM_Disk
-    Brain -->|Read Flag| RAM_Disk
-    TeleBot -->|Replies| TelegramAPI
+```
+Audio Source
+  └─ BasicMetricsSink       (RMS, Flux, dBSPL → context.metrics)
+  └─ SADGatewaySink         (noise gate — skip AI if silent)
+  └─ FeatureExtractorSink   (YAMNet inference → context.current_event_label)
+  └─ PolicyEngineSink       (evaluate YAML rules → context.actions_to_take)
+  └─ SmartBufferSink        (record raw audio → raw_queue)
+        │
+   raw_queue
+        │
+  RecorderTransformerWorker (optional FIR calibration → upload_queue)
+        │
+   upload_queue
+        │
+  CloudUploaderService      (stream WAV + CSV to cloud)
 ```
 
+Background services: `HealthMonitorService`, `SystemHeartbeatService`, `TelegramCommandReceiver`.
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    
-    [*] --> Init
-    Init --> ReconnectLoop
-    
-    state ReconnectLoop {
-        [*] --> OpenStream
-        OpenStream --> CaptureLoop: Success
-        OpenStream --> ErrorWait: Fail
-        ErrorWait --> OpenStream: Retry (Max 10)
-        
-        state CaptureLoop {
-            [*] --> ReadAudio
-            ReadAudio --> PushZMQ
-            PushZMQ --> ReadAudio
-            
-            note right of PushZMQ
-                ZMQ buffers data if
-                Consumer is slow
-            end note
-        }
-    }
-    
-    CaptureLoop --> ReconnectLoop: Hardware Error
+## 🚀 Quick Start
+
+### 1. 📦 Install dependencies
+
+```bash
+# System audio libraries (Ubuntu/Debian/Raspberry Pi OS)
+make setup
+
+# Python dependencies (creates .venv with Python 3.11)
+make install
 ```
 
-```mermaid
-flowchart TD
-    Start([ZMQ Pull]) --> Metrics[Calc Metrics: dBFS/LUFS]
-    Metrics --> Classify[AI Classification]
-    
-    subgraph Decision_Engine [Security Policy]
-        Classify --> CheckPrivacy{Privacy Active?}
-        
-        CheckPrivacy -- YES --> IsBark{Is Dog Bark?}
-        IsBark -- YES --> Approved[Approve Event]
-        IsBark -- NO --> Drop[Drop / Ignore]
-        
-        CheckPrivacy -- NO --> IsNight{Is Night Time?}
-        IsNight -- YES --> Approved
-        IsNight -- NO --> IsLoud{Is Loud Noise?}
-        
-        IsLoud -- YES --> Approved
-        IsLoud -- NO --> Drop
-    end
-    
-    Approved --> Pipeline[Execute Pipeline]
-    
-    subgraph Sinks
-        Pipeline --> SinkTele[Telegram Alert]
-        Pipeline --> SinkCloud[Magalu Recorder]
-        Pipeline --> SinkMeta[Metadata Log]
-    end
-    
-    SinkCloud --> Buffer[Buffer to /dev/shm]
-    Buffer --> UploadThread((Upload Worker))
-    UploadThread --> S3[Object Storage]
+### 2. 🧠 Download AI models
+
+```bash
+make setup-models
 ```
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Bot as Telegram Control
-    participant RAM as /dev/shm/privacy_mode
-    participant Policy as Security Policy
-    participant Pipe as Pipeline
+### 3. ⚙️ Configure
 
-    Note over Bot, Policy: Both run inside Consumer Process
+Copy `.env.example` to `.env` and fill in your credentials:
 
-    User->>Bot: /privacy on 2h
-    Bot->>RAM: Write Expiration Timestamp (Now + 2h)
-    Bot->>User: "Privacy ON until 14:00"
+```ini
+# Telegram
+TELEGRAM_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 
-    loop Every Audio Chunk
-        Policy->>RAM: Check if File Exists?
-        RAM-->>Policy: Yes (Timestamp found)
-        
-        alt Current Time < Timestamp
-            Policy->>Policy: Privacy Active (Mode: Restricted)
-            
-            alt Event is "Talking"
-                Policy->>Pipe: BLOCKED (Drop)
-            else Event is "Dog Bark"
-                Policy->>Pipe: ALLOWED (Critical)
-                Pipe->>User: Alert Sent
-            end
-            
-        else Current Time > Timestamp
-            Policy->>RAM: Delete File (Expired)
-            Policy->>Pipe: ALLOWED (Resume Normal Ops)
-        end
-    end
+# Magalu Object Storage (S3-compatible)
+MAGALU_KEY=your_access_key
+MAGALU_SECRET=your_secret_key
 ```
 
+Edit `security_policy.yaml` to set calibration file path, detection thresholds, and rules:
 
-# 1. Install the package
-uv sync --extra dev
+```yaml
+hardware:
+  calibration_file: "src/umik-1/your_serial.txt"   # path to UMIK-1 calibration file
 
-# 2. Download Models
-uv run edge-setup-models
+feature_extractor:
+  sad_threshold_rms: 0.002
+  sad_threshold_dbspl: 45.0
 
-# 3. Run the Service Installer (Must use sudo)
-# Note: We use 'sudo -E' to preserve the 'uv' environment variables if needed,
-# or point directly to the python in .venv
-sudo .venv/bin/python -m src.scripts.install_service \
-  --config ./security_policy.yaml \
-  --env ./.env \
-  --calib ./7001234.txt
+policies:
+  - name: "Dog Bark"
+    condition: "current_event_label == 'Dog' and current_confidence > 0.6"
+    actions: ["telegram_alert", "record_evidence", "cloud_upload"]
+    ignore_privacy: false
+```
+
+### 4. ▶️ Run
+
+```bash
+# Auto-detect microphone and run
+make run
+
+# Run with default system microphone
+make run-default
+
+# Run with explicit policy and env files
+uv run edge-monitor-run --config security_policy.yaml --env .env
+```
+
+## 📱 Telegram Commands
+
+The bot both sends alerts and accepts commands from the configured `TELEGRAM_CHAT_ID`.
+
+| Command | Description |
+|---|---|
+| `/privacy on` | Activate privacy mode for **4 hours** (default — no duration needed) |
+| `/privacy on 2h` | Activate for a custom duration |
+| `/privacy on 30m` | Activate for 30 minutes |
+| `/privacy on 1d` | Activate for a day |
+| `/privacy off` | Deactivate immediately |
+| `/privacy status` | Report current state and remaining time |
+
+Supported duration formats: `Nh`, `Nm`, `Nd`, or a plain integer (treated as minutes).
+
+Rules marked `ignore_privacy: true` (e.g. glass break, gunshot) fire regardless of privacy state.
+
+## 🛠️ Development
+
+```bash
+make lint        # Ruff linter
+make format      # Ruff autoformat
+make test        # pytest (unit tests)
+make test-e2e    # pytest (e2e tests, requires credentials)
+make coverage    # pytest with HTML coverage report
+make report      # Generate PDF analytics report from cloud metrics
+make list-devices  # Print available audio input devices
+```
+
+### Project structure
+
+```
+src/
+  app/
+    sinks/           # Real-time pipeline stages (AudioSink implementations)
+    services/        # Background workers and integrations
+    settings.py      # Pydantic settings + YAML policy loader
+    context.py       # PipelineContext (shared state bus)
+    main.py          # Entry point
+  scripts/           # Setup, report generation, ZMQ utilities
+tests/
+  sinks/
+  services/
+  e2e/
+```
+
+## 📋 Requirements
+
+- Python 3.11
+- `uv` — [install](https://github.com/astral-sh/uv)
+- `libportaudio2`, `libsndfile1` (installed by `make setup`)
+- **AI runtime**: `tflite-runtime` is included in the default install (`use_tflite: true`). Full TensorFlow is only needed for dev/SavedModel mode (`use_tflite: false`): `uv sync --extra full`
