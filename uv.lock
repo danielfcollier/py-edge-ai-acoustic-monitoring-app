@@ -540,11 +540,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
 edge = [
     { name = "tflite-runtime" },
 ]
@@ -559,6 +554,18 @@ analysis = [
     { name = "tabulate" },
     { name = "weasyprint" },
 ]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "setuptools" },
+    { name = "stdeb" },
+]
+publish = [
+    { name = "boto3" },
+    { name = "python-debian" },
+    { name = "python-gnupg" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -566,17 +573,14 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "google-cloud-storage", specifier = ">=3.7.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = "~=1.18.2" },
     { name = "prometheus-client", specifier = ">=0.17.1" },
     { name = "psutil", specifier = ">=7.2.1" },
     { name = "pydantic", specifier = "==2.12.3" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-telegram-bot", specifier = ">=22.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "resampy", specifier = ">=0.4.3" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = "~=0.14.1" },
     { name = "rule-engine", specifier = ">=4.5.3" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "tensorflow", specifier = ">=2.16.0" },
@@ -584,7 +588,7 @@ requires-dist = [
     { name = "tflite-runtime", marker = "extra == 'edge'", specifier = ">=2.14.0" },
     { name = "umik-base-app", specifier = ">=0.4.4a1.dev0" },
 ]
-provides-extras = ["edge", "dev"]
+provides-extras = ["edge"]
 
 [package.metadata.requires-dev]
 analysis = [
@@ -595,6 +599,18 @@ analysis = [
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "weasyprint", specifier = ">=67.0" },
+]
+dev = [
+    { name = "mypy", specifier = "~=1.18.2" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "ruff", specifier = "~=0.14.1" },
+    { name = "setuptools", specifier = ">=80.0" },
+    { name = "stdeb", specifier = ">=0.11.0" },
+]
+publish = [
+    { name = "boto3", specifier = ">=1.35" },
+    { name = "python-debian", specifier = ">=0.1.49" },
+    { name = "python-gnupg", specifier = ">=0.5" },
 ]
 
 [[package]]
@@ -2196,12 +2212,33 @@ wheels = [
 ]
 
 [[package]]
+name = "python-debian"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "charset-normalizer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/f4/ec7ba072029399a89a2670bcef4df79c52f2efaa672f86e0a86252313333/python_debian-1.1.0.tar.gz", hash = "sha256:afe3c7267d81c29c79ab44d803a0756d0796b0e41bb0a05c5cafcdd2b980d4e6", size = 127848, upload-time = "2026-02-09T02:13:24.491Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/66/af49103279c07900b89b7ebac53111910aa8eb6d898be0b47220036b0b03/python_debian-1.1.0-py3-none-any.whl", hash = "sha256:3e553b6d0b886272a26649e13106e33c382bcd21c80b09f5c0c81fc7c8c8c743", size = 137984, upload-time = "2026-02-09T02:13:22.54Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
+]
+
+[[package]]
+name = "python-gnupg"
+version = "0.5.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/2c/6cd2c7cff4bdbb434be5429ef6b8e96ee6b50155551361f30a1bb2ea3c1d/python_gnupg-0.5.6.tar.gz", hash = "sha256:5743e96212d38923fc19083812dc127907e44dbd3bcf0db4d657e291d3c21eac", size = 66825, upload-time = "2025-12-31T17:19:33.19Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d2/ab/0ea9de971caf3cd2e268d2b05dfe9883b21cfe686a59249bd2dccb4bae33/python_gnupg-0.5.6-py2.py3-none-any.whl", hash = "sha256:b5050a55663d8ab9fcc8d97556d229af337a87a3ebebd7054cbd8b7e2043394a", size = 22082, upload-time = "2025-12-31T17:16:22.743Z" },
 ]
 
 [[package]]
@@ -2684,6 +2721,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/e3/ce8d38cb2d70e05ffeddc28bb09bad77cfef979eb0a299c9117f7ed4e6a9/standard_sunau-3.13.0.tar.gz", hash = "sha256:b319a1ac95a09a2378a8442f403c66f4fd4b36616d6df6ae82b8e536ee790908", size = 9368, upload-time = "2024-10-30T16:01:41.626Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/34/ae/e3707f6c1bc6f7aa0df600ba8075bfb8a19252140cd595335be60e25f9ee/standard_sunau-3.13.0-py3-none-any.whl", hash = "sha256:53af624a9529c41062f4c2fd33837f297f3baa196b0cfceffea6555654602622", size = 7364, upload-time = "2024-10-30T16:01:28.003Z" },
+]
+
+[[package]]
+name = "stdeb"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/1f/64eb20d09d1a8f74f89eba4861f9632033640b4a97806a96d5958cb91232/stdeb-0.11.0.tar.gz", hash = "sha256:e7084e24f1616ab599d3f390599363b39670905179c261d23cd8ddcc0ecb3b71", size = 71166, upload-time = "2025-09-12T19:02:12.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/99/89343c1e43ef0ee966bc42651d47e8de844599d4b33b5b2a44a77ba6afc0/stdeb-0.11.0-py3-none-any.whl", hash = "sha256:3f883c522ecb76394514ea4d282eda7671c8bd0db0fd904f9774ba20e02035e6", size = 44310, upload-time = "2025-09-12T19:02:10.839Z" },
 ]
 
 [[package]]
