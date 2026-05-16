@@ -111,11 +111,6 @@ def main():
     health_monitor.start()
     services.append(health_monitor)
 
-    # Service: Telegram Command Receiver (privacy mode, etc.)
-    telegram_cmds = TelegramCommandReceiver()
-    telegram_cmds.start()
-    services.append(telegram_cmds)
-
     # Service: System Heartbeat (CSV Logger)
     system_heartbeat = SystemHeartbeatService()
     system_heartbeat.start()
@@ -135,6 +130,16 @@ def main():
 
     # Pipeline Setup
     context = PipelineContext()
+
+    # Service: Telegram Command Receiver — started after context so /status has live data
+    telegram_cmds = TelegramCommandReceiver(
+        context=context,
+        raw_queue=raw_queue,
+        upload_queue=upload_queue,
+    )
+    telegram_cmds.start()
+    services.append(telegram_cmds)
+
     pipeline = AudioPipeline()
 
     pipeline.add_sink(BasicMetricsSink(context))

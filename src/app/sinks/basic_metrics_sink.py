@@ -25,7 +25,6 @@ class BasicMetricsSink(AudioSink):
     def __init__(self, context: PipelineContext):
         self._context = context
         self._input_sr = int(settings.AUDIO.SAMPLE_RATE)
-        self._dbspl_silence_level = settings.CONFIG.services.dbspl_silence_level
         self._metrics = PrometheusService()
 
     def handle(self, ctx: AudioCtx) -> None:
@@ -46,6 +45,6 @@ class BasicMetricsSink(AudioSink):
             dbspl = AudioMetrics.dBSPL(dbfs, ctx.sensitivity_dbfs, ctx.reference_dbspl)
             self._context.metrics["dbspl"] = dbspl
 
-        # 4. Prometheus — use silence floor when dBSPL is uncalibrated
+        # 4. Prometheus — omit dBSPL when mic is uncalibrated
         dbspl = self._context.metrics["dbspl"]
-        self._metrics.update_audio(dbspl if dbspl > 0 else self._dbspl_silence_level, rms, flux)
+        self._metrics.update_audio(rms, flux, dbspl=dbspl if dbspl > 0 else None)
