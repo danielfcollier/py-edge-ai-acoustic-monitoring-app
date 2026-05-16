@@ -31,7 +31,7 @@ install: setup venv ## Install all dependencies (Prod + Dev).
 
 setup: ## Install system libraries (Ubuntu/Debian).
 	@echo -e "$(GREEN)>>> Installing system audio libraries...$(NC)"
-	@sudo apt update && sudo apt install -y libportaudio2 libsndfile1 -y
+	@sudo apt update && sudo apt install -y libportaudio2 libsndfile1 ffmpeg
 
 venv: ## Create virtual environment using Python 3.11
 	@echo -e "$(GREEN)>>> Creating .venv with Python 3.11...$(NC)"
@@ -55,9 +55,17 @@ format: ## Format code with Ruff.
 check: lint test ## Run lint and tests.
 	@echo -e "$(GREEN)>>> All checks passed.$(NC)"
 
-test: ## Run unit tests.
+test: ## Run unit tests (excludes e2e).
 	@echo -e "$(GREEN)>>> Running tests...$(NC)"
-	@$(PYTHON) -m pytest
+	@$(PYTHON) -m pytest -v
+
+test-e2e: ## Run end-to-end tests (requires credentials in .env). Skips heartbeat tests.
+	@echo -e "$(GREEN)>>> Running e2e tests...$(NC)"
+	@$(PYTHON) -m pytest tests/e2e -v -m "e2e and not heartbeat"
+
+test-e2e-heartbeat: ## Run heartbeat/health-monitoring e2e tests only.
+	@echo -e "$(GREEN)>>> Running heartbeat e2e tests...$(NC)"
+	@$(PYTHON) -m pytest tests/e2e/test_heartbeat.py -v -m "e2e and heartbeat"
 
 coverage: ## Generate test coverage report.
 	@$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=html
@@ -67,9 +75,9 @@ clean: ## Remove python cache files.
 	@find . -name "__pycache__" -exec rm -rf {} +
 	@rm -rf .pytest_cache .coverage htmlcov
 
-clean-all: clean ## Remove venv and build artifacts.
+clean-all: clean clean-deb ## Remove venv and build artifacts.
 	@echo -e "$(GREEN)>>> Full cleanup...$(NC)"
-	@rm -rf .venv .ruff_cache .mypy_cache build dist *.egg-info
+	@rm -rf .venv .ruff_cache .mypy_cache build dist *.egg-info src/app/vendor/
 
 # --- Project Setup & Models ---
 
@@ -92,6 +100,10 @@ run-default: ## Run with default PC microphone (No UMIK-1).
 run-sim: ## Run in simulation mode (if supported by base app).
 	@$(UV) run edge-monitor-run --config "security_policy.yaml" --device "sysdefault"
 
+convert: ## Convert WAV recordings to OGG/MP3 (ARGS="recordings/ --format ogg mp3")
+	@echo -e "$(GREEN)>>> Converting audio files...$(NC)"
+	@$(UV) run edge-monitor-convert $(ARGS)
+
 report: ## Generate PDF report from cloud metrics.
 	@echo -e "$(GREEN)>>> Generating Analytics Report...$(NC)"
 	@PYTHONPATH=$(BASE_DIR) $(PYTHON) $(SCRIPTS_DIR)/generate_report.py
@@ -107,3 +119,78 @@ fan-test: ## Test Raspberry Pi fan control.
 list-devices: ## List available audio input devices.
 	@echo -e "$(GREEN)>>> Listing Audio Devices...$(NC)"
 	@$(PYTHON) -c "import sounddevice as sd; print(sd.query_devices())"
+
+# ==============================================================================
+# VERSION BUMPING
+# ==============================================================================
+CURRENT_VERSION := $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+MAJOR := $(word 1,$(subst ., ,$(CURRENT_VERSION)))
+MINOR := $(word 2,$(subst ., ,$(CURRENT_VERSION)))
+PATCH := $(word 3,$(subst ., ,$(CURRENT_VERSION)))
+
+.PHONY: bump-patch bump-minor bump-major
+
+bump-patch: ## Bump patch version (0.1.0 → 0.1.1)
+	$(eval NEW_VERSION := $(MAJOR).$(MINOR).$(shell echo $$(($(PATCH)+1))))
+	@sed -i 's/^version = "$(CURRENT_VERSION)"/version = "$(NEW_VERSION)"/' pyproject.toml
+	@sed -i 's/__version__ = "$(CURRENT_VERSION)"/__version__ = "$(NEW_VERSION)"/' src/app/__init__.py
+	@printf "%s\n" "Bumped version: $(CURRENT_VERSION) → $(NEW_VERSION)"
+
+bump-minor: ## Bump minor version (0.1.0 → 0.2.0)
+	$(eval NEW_VERSION := $(MAJOR).$(shell echo $$(($(MINOR)+1))).0)
+	@sed -i 's/^version = "$(CURRENT_VERSION)"/version = "$(NEW_VERSION)"/' pyproject.toml
+	@sed -i 's/__version__ = "$(CURRENT_VERSION)"/__version__ = "$(NEW_VERSION)"/' src/app/__init__.py
+	@printf "%s\n" "Bumped version: $(CURRENT_VERSION) → $(NEW_VERSION)"
+
+bump-major: ## Bump major version (0.1.0 → 1.0.0)
+	$(eval NEW_VERSION := $(shell echo $$(($(MAJOR)+1))).0.0)
+	@sed -i 's/^version = "$(CURRENT_VERSION)"/version = "$(NEW_VERSION)"/' pyproject.toml
+	@sed -i 's/__version__ = "$(CURRENT_VERSION)"/__version__ = "$(NEW_VERSION)"/' src/app/__init__.py
+	@printf "%s\n" "Bumped version: $(CURRENT_VERSION) → $(NEW_VERSION)"
+
+# ==============================================================================
+# DEB PACKAGING
+# ==============================================================================
+DISTRO ?= bookworm
+
+.PHONY: install-build-deps vendor build-deb clean-deb test-deb publish-deb
+
+install-build-deps: ## Install system build tools for .deb packaging
+	sudo apt-get update
+	sudo apt-get install -y build-essential debhelper dh-python python3-all python3-setuptools
+
+vendor: ## Bundle all Python deps into src/app/vendor/ for .deb install
+	@printf "%s\n" "📦 Vendoring dependencies from uv.lock..."
+	mkdir -p src/app/vendor
+	touch src/app/vendor/__init__.py
+	uv export --no-dev --frozen --format requirements-txt | grep -v "file://" > requirements.frozen.txt
+	uv pip install -r requirements.frozen.txt --target src/app/vendor --python 3.11
+	rm requirements.frozen.txt
+	@printf "%s\n" "✅ Vendor populated."
+
+clean-deb: ## Remove .deb build artifacts and vendor
+	rm -rf deb_dist dist build *.egg-info src/app/vendor/
+
+build-deb: clean-deb vendor ## Build the ai-acoustic-monitor .deb package
+	@printf "%s\n" "🚀 Building .deb package..."
+	@bash build_deb.sh
+
+test-deb: ## Test .deb in a clean Docker container (DISTRO=bookworm|noble)
+	@printf "%s\n" "🧪 Testing package in Docker (debian/ubuntu:$(DISTRO))..."
+	@docker run --rm -v $$(pwd):/dist debian:$(DISTRO) sh -c "\
+		export DEBIAN_FRONTEND=noninteractive && \
+		apt-get update -qq && \
+		apt-get install -y /dist/deb_dist/*.deb && \
+		printf '\n--- CLI ---\n' && \
+		edge-monitor-run --help && \
+		printf '\n--- Service templates ---\n' && \
+		ls -l /usr/lib/ai-acoustic-monitor/setup/"
+
+publish-deb: ## Publish built .deb to S3 APT repository (reads .env for credentials)
+	@if [ -z "$(BUCKET)" ]; then \
+		printf "%s\n" "Error: BUCKET=... required. Usage: make publish-deb BUCKET=ai-acoustic-monitor"; \
+		exit 1; \
+	fi
+	@set -a && . ./.env && set +a && \
+	$(UV) run --group publish python publish_repo.py \
+		"$$(find deb_dist -name '*.deb' -type f | head -1)" $(BUCKET)
