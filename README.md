@@ -150,6 +150,47 @@ Supported duration formats: `Nh`, `Nm`, `Nd`, or a plain integer (treated as min
 
 Rules marked `ignore_privacy: true` (e.g. glass break, gunshot) fire regardless of privacy state.
 
+## 📊 Prometheus & Grafana
+
+The app exposes real-time metrics on **port 8000** (Prometheus HTTP server). Metrics are updated every second via a max-hold buffer — short transient peaks between scrapes are never lost.
+
+### Metrics exposed
+
+| Metric | Description |
+|---|---|
+| `audio_dbspl` | Peak dBSPL since last scrape — **only published when a calibrated mic is connected** |
+| `audio_rms` | Peak RMS amplitude |
+| `audio_spectral_flux` | Spectral flux (change intensity) |
+| `ai_confidence` | Max AI classification confidence |
+| `audio_event_count_total{category}` | Cumulative event counter per policy category |
+| `system_cpu_usage` | CPU % |
+| `system_ram_usage` | RAM % |
+| `system_temp_celsius` | CPU temperature |
+| `system_disk_usage` | Disk % |
+| `system_disk_attached_usage` | Attached disk % |
+
+### Prometheus scrape config
+
+Add to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: edge-monitor
+    static_configs:
+      - targets: ["<device-ip>:8000"]
+```
+
+### Grafana dashboard
+
+Import `docs/grafana/edge-monitor-dashboard.json`:
+
+1. Grafana → **Dashboards** → **Import**
+2. Upload `edge-monitor-dashboard.json`
+3. Map `DS_PROMETHEUS` to your Prometheus datasource
+4. Click **Import**
+
+The dashboard includes three rows: 🎙️ Audio Acoustics, 🧠 AI Classification, 🖥️ System Health.
+
 ## 🛠️ Development
 
 ```bash

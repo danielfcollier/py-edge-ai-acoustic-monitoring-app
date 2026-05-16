@@ -33,8 +33,12 @@ This manual covers everything you need to configure, run, and operate the Edge A
   - [5. 💓 Health Monitoring](#5-health-monitoring)
     - [GPIO heartbeat](#gpio-heartbeat)
     - [healthchecks.io dead-man's switch](#healthchecksio-dead-mans-switch)
-  - [6. 🪵 Log Levels](#6-log-levels)
-  - [7. 🔧 Troubleshooting](#7-troubleshooting)
+  - [6. 📊 Prometheus & Grafana](#6-prometheus--grafana)
+    - [Metrics reference](#metrics-reference)
+    - [Prometheus scrape config](#prometheus-scrape-config)
+    - [Grafana dashboard](#grafana-dashboard)
+  - [7. 🪵 Log Levels](#7-log-levels)
+  - [8. 🔧 Troubleshooting](#8-troubleshooting)
     - [Telegram not working](#telegram-not-working)
     - [No audio events detected](#no-audio-events-detected)
     - [Privacy mode not clearing after reboot](#privacy-mode-not-clearing-after-reboot)
@@ -542,7 +546,54 @@ services:
 ```
 
 
-## 6. Log Levels 🪵
+## 6. Prometheus & Grafana 📊
+
+The app exposes real-time telemetry on **port 8000** (Prometheus HTTP). Metrics are buffered using a max-hold pattern — transient peaks between scrapes are never missed.
+
+### Metrics reference
+
+| Metric | Description |
+|---|---|
+| `audio_dbspl` | Peak dBSPL — **only published when a calibrated mic is connected**; gaps in the graph mean uncalibrated mode |
+| `audio_rms` | Peak RMS amplitude since last scrape |
+| `audio_spectral_flux` | Spectral flux (change intensity — spikes = sudden sound events) |
+| `ai_confidence` | Max AI classification confidence |
+| `audio_event_count_total{category}` | Cumulative event counter per policy rule category |
+| `system_cpu_usage` | CPU % (updated every heartbeat interval) |
+| `system_ram_usage` | RAM % |
+| `system_temp_celsius` | CPU temperature in °C |
+| `system_disk_usage` | Root disk % |
+| `system_disk_attached_usage` | Attached storage % (e.g. USB SSD) |
+
+### Prometheus scrape config
+
+Add this job to your `prometheus.yml` and reload Prometheus:
+
+```yaml
+scrape_configs:
+  - job_name: edge-monitor
+    static_configs:
+      - targets: ["<device-ip>:8000"]
+    scrape_interval: 5s
+```
+
+### Grafana dashboard
+
+A ready-to-import dashboard is provided at `docs/grafana/edge-monitor-dashboard.json`.
+
+**Import steps:**
+1. Open Grafana → **Dashboards** → **Import**
+2. Upload `edge-monitor-dashboard.json`
+3. In the datasource dropdown, map `DS_PROMETHEUS` to your Prometheus instance
+4. Click **Import**
+
+The dashboard has three rows:
+- 🎙️ **Audio Acoustics** — dBSPL gauge (calibrated mic only), RMS gauge, spectral flux, history chart
+- 🧠 **AI Classification** — confidence meter, history, events-by-category bar chart
+- 🖥️ **System Health** — CPU / RAM / temp / disk gauges + history
+
+
+## 7. Log Levels 🪵
 
 Log verbosity is controlled per-module from `.env`. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`.
 
@@ -558,7 +609,7 @@ Log verbosity is controlled per-module from `.env`. Valid values: `DEBUG`, `INFO
 For production deployments, set `LOG_LEVEL_POLICY_ENGINE=INFO` and `LOG_LEVEL_FEATURE_EXTRACTOR=INFO` to reduce log volume.
 
 
-## 7. Troubleshooting 🔧
+## 8. Troubleshooting 🔧
 
 ### Telegram not working
 

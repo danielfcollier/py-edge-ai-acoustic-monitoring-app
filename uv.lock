@@ -534,14 +534,14 @@ dependencies = [
     { name = "resampy" },
     { name = "rule-engine" },
     { name = "scipy" },
-    { name = "tensorflow" },
-    { name = "tensorflow-hub" },
+    { name = "tflite-runtime" },
     { name = "umik-base-app" },
 ]
 
 [package.optional-dependencies]
-edge = [
-    { name = "tflite-runtime" },
+full = [
+    { name = "tensorflow" },
+    { name = "tensorflow-hub" },
 ]
 
 [package.dev-dependencies]
@@ -583,12 +583,12 @@ requires-dist = [
     { name = "resampy", specifier = ">=0.4.3" },
     { name = "rule-engine", specifier = ">=4.5.3" },
     { name = "scipy", specifier = ">=1.16.3" },
-    { name = "tensorflow", specifier = ">=2.16.0" },
-    { name = "tensorflow-hub", specifier = ">=0.16.1" },
-    { name = "tflite-runtime", marker = "extra == 'edge'", specifier = ">=2.14.0" },
+    { name = "tensorflow", marker = "extra == 'full'", specifier = ">=2.16.0" },
+    { name = "tensorflow-hub", marker = "extra == 'full'", specifier = ">=0.16.1" },
+    { name = "tflite-runtime", specifier = ">=2.14.0" },
     { name = "umik-base-app", specifier = ">=0.4.4a1.dev0" },
 ]
-provides-extras = ["edge"]
+provides-extras = ["full"]
 
 [package.metadata.requires-dev]
 analysis = [
