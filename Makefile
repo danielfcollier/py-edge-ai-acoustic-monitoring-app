@@ -61,14 +61,17 @@ test: ## Run unit tests (excludes e2e).
 
 test-e2e: ## Run end-to-end tests (requires credentials in .env). Skips heartbeat tests.
 	@echo -e "$(GREEN)>>> Running e2e tests...$(NC)"
-	@$(PYTHON) -m pytest tests/e2e -v -m "e2e and not heartbeat"
+	@mkdir -p reports
+	@$(PYTHON) -m pytest tests/e2e -v -m "e2e and not heartbeat" --junitxml=reports/e2e-results.xml
 
 test-e2e-heartbeat: ## Run heartbeat/health-monitoring e2e tests only.
 	@echo -e "$(GREEN)>>> Running heartbeat e2e tests...$(NC)"
-	@$(PYTHON) -m pytest tests/e2e/test_heartbeat.py -v -m "e2e and heartbeat"
+	@mkdir -p reports
+	@$(PYTHON) -m pytest tests/e2e/test_heartbeat.py -v -m "e2e and heartbeat" --junitxml=reports/e2e-heartbeat-results.xml
 
 coverage: ## Generate test coverage report.
-	@$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=html
+	@mkdir -p reports
+	@$(PYTHON) -m pytest --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml:reports/coverage.xml
 
 clean: ## Remove python cache files.
 	@find . -name "*.pyc" -delete

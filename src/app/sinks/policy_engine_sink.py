@@ -15,6 +15,7 @@ from umik_base_app import AudioSink, PipelineContext as AudioCtx
 
 from ..context import PipelineContext
 from ..services.privacy_mode import PrivacyMode
+from ..services.prometheus_service import PrometheusService
 from ..services.telegram_bot_client import TelegramBotClient
 from ..settings import settings
 
@@ -45,6 +46,7 @@ class PolicyEngineSink(AudioSink):
         # Services
         self._telegram = TelegramBotClient()
         self._privacy = PrivacyMode()
+        self._prometheus = PrometheusService()
 
         # Cooldown State Management
         # Prevents spamming Telegram alerts for the same event.
@@ -144,6 +146,8 @@ class PolicyEngineSink(AudioSink):
         applied so that SmartBufferSink keeps the recording alive for the full event
         duration. Alert actions (telegram_alert) are only sent when can_alert=True.
         """
+        self._prometheus.record_event(self._context.current_event_label)
+
         # Recording/upload actions: never rate-limited
         non_alert_actions = [a for a in policy.actions if a not in _ALERT_ACTIONS]
         if non_alert_actions:

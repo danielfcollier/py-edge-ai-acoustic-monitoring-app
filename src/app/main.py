@@ -24,6 +24,7 @@ from .calibration import setup_calibration
 from .context import PipelineContext
 from .services.cloud_uploader_service import CloudUploaderService
 from .services.health_monitor_service import HealthMonitorService
+from .services.prometheus_service import PrometheusService
 from .services.recorder_transformer_worker import RecorderTransformerWorker
 from .services.system_heartbeat_service import SystemHeartbeatService
 from .services.telegram_command_receiver import TelegramCommandReceiver
@@ -83,6 +84,8 @@ def main():
         logger.info(f"Loading secrets from {args.env}")
 
     settings.load_policy_file(args.config)
+
+    PrometheusService().start()
 
     ensure_models_present()
 

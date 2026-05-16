@@ -88,13 +88,14 @@ class PrometheusService:
         except Exception as e:
             logger.error(f"❌ Failed to start metrics server: {e}")
 
-    def update_audio(self, dbspl: float, rms: float, flux: float):
+    def update_audio(self, rms: float, flux: float, dbspl: float | None = None):
         """
         Thread-safe update for audio physics.
         Keeps the HIGHEST value seen since the last sync.
+        dbspl is only provided when the mic is calibrated; omit it otherwise.
         """
         with self._lock:
-            if dbspl > self._max_dbspl:
+            if dbspl is not None and dbspl > self._max_dbspl:
                 self._max_dbspl = dbspl
             if rms > self._max_rms:
                 self._max_rms = rms
@@ -136,14 +137,14 @@ class PrometheusService:
                 break
 
             with self._lock:
-                # 1. Push the Max value seen in this interval to Prometheus
-                self._g_dbspl.set(self._max_dbspl)
+                # dBSPL is only pushed when a calibrated value arrived this interval.
+                # Leaving the gauge unset keeps uncalibrated devices from emitting fake data.
+                if self._max_dbspl > MAX_DBSPL:
+                    self._g_dbspl.set(self._max_dbspl)
                 self._g_rms.set(self._max_rms)
                 self._g_flux.set(self._max_flux)
                 self._g_conf.set(self._max_conf)
 
-                # 2. Reset buffers for the next interval
-                # We reset to the "floor" so we can catch new peaks
                 self._max_dbspl = MAX_DBSPL
                 self._max_rms = MAX_RMS
                 self._max_flux = MAX_FLUX
