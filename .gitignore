@@ -209,3 +209,7 @@ __marimo__/
 
 recordings/
 recordings_old/
+src/app/vendor/
+deb_dist/
+ai_acoustic_monitoring_app-*
+*gpg.key

@@ -17,6 +17,107 @@ wheels = [
 ]
 
 [[package]]
+name = "ai-acoustic-monitoring-app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "boto3" },
+    { name = "dotenv" },
+    { name = "google-cloud-storage" },
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "prometheus-client" },
+    { name = "psutil" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "python-telegram-bot" },
+    { name = "pyyaml" },
+    { name = "resampy" },
+    { name = "rule-engine" },
+    { name = "scipy" },
+    { name = "tflite-runtime" },
+    { name = "umik-base-app" },
+]
+
+[package.optional-dependencies]
+full = [
+    { name = "tensorflow", version = "2.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "tensorflow", version = "2.20.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "tensorflow-hub" },
+]
+
+[package.dev-dependencies]
+analysis = [
+    { name = "boto3" },
+    { name = "markdown" },
+    { name = "matplotlib" },
+    { name = "pandas" },
+    { name = "seaborn" },
+    { name = "tabulate" },
+    { name = "weasyprint" },
+]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "setuptools" },
+    { name = "stdeb" },
+]
+publish = [
+    { name = "boto3" },
+    { name = "python-debian" },
+    { name = "python-gnupg" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.42.19" },
+    { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "google-cloud-storage", specifier = ">=3.7.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "numpy", specifier = ">=1.23.0,<2" },
+    { name = "prometheus-client", specifier = ">=0.17.1" },
+    { name = "psutil", specifier = ">=7.2.1" },
+    { name = "pydantic", specifier = "==2.12.3" },
+    { name = "pydantic-settings", specifier = ">=2.0.0" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "python-telegram-bot", specifier = ">=22.5" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "resampy", specifier = ">=0.4.3" },
+    { name = "rule-engine", specifier = ">=4.5.3" },
+    { name = "scipy", specifier = ">=1.16.3" },
+    { name = "tensorflow", marker = "extra == 'full'", specifier = ">=2.16.0" },
+    { name = "tensorflow-hub", marker = "extra == 'full'", specifier = ">=0.16.1" },
+    { name = "tflite-runtime", specifier = ">=2.14.0" },
+    { name = "umik-base-app", specifier = ">=0.4.4a1.dev0" },
+]
+provides-extras = ["full"]
+
+[package.metadata.requires-dev]
+analysis = [
+    { name = "boto3", specifier = ">=1.42.19" },
+    { name = "markdown", specifier = ">=3.10" },
+    { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "pandas", specifier = ">=2.3.3" },
+    { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "tabulate", specifier = ">=0.9.0" },
+    { name = "weasyprint", specifier = ">=67.0" },
+]
+dev = [
+    { name = "mypy", specifier = "~=1.18.2" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "ruff", specifier = "~=0.14.1" },
+    { name = "setuptools", specifier = ">=80.0" },
+    { name = "stdeb", specifier = ">=0.11.0" },
+]
+publish = [
+    { name = "boto3", specifier = ">=1.35" },
+    { name = "python-debian", specifier = ">=0.1.49" },
+    { name = "python-gnupg", specifier = ">=0.5" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -513,107 +614,6 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/b7/545d2c10c1fc15e48653c91efde329a790f2eecfbbf2bd16003b5db2bab0/dotenv-0.9.9-py2.py3-none-any.whl", hash = "sha256:29cf74a087b31dafdb5a446b6d7e11cbce8ed2741540e2339c69fbef92c94ce9", size = 1892, upload-time = "2025-02-19T22:15:01.647Z" },
-]
-
-[[package]]
-name = "edge-ai-acoustic-monitoring-app"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "boto3" },
-    { name = "dotenv" },
-    { name = "google-cloud-storage" },
-    { name = "httpx" },
-    { name = "numpy" },
-    { name = "prometheus-client" },
-    { name = "psutil" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "python-telegram-bot" },
-    { name = "pyyaml" },
-    { name = "resampy" },
-    { name = "rule-engine" },
-    { name = "scipy" },
-    { name = "tflite-runtime" },
-    { name = "umik-base-app" },
-]
-
-[package.optional-dependencies]
-full = [
-    { name = "tensorflow", version = "2.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
-    { name = "tensorflow", version = "2.20.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "tensorflow-hub" },
-]
-
-[package.dev-dependencies]
-analysis = [
-    { name = "boto3" },
-    { name = "markdown" },
-    { name = "matplotlib" },
-    { name = "pandas" },
-    { name = "seaborn" },
-    { name = "tabulate" },
-    { name = "weasyprint" },
-]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "setuptools" },
-    { name = "stdeb" },
-]
-publish = [
-    { name = "boto3" },
-    { name = "python-debian" },
-    { name = "python-gnupg" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.42.19" },
-    { name = "dotenv", specifier = ">=0.9.9" },
-    { name = "google-cloud-storage", specifier = ">=3.7.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "numpy", specifier = ">=1.23.0,<2" },
-    { name = "prometheus-client", specifier = ">=0.17.1" },
-    { name = "psutil", specifier = ">=7.2.1" },
-    { name = "pydantic", specifier = "==2.12.3" },
-    { name = "pydantic-settings", specifier = ">=2.0.0" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "python-telegram-bot", specifier = ">=22.5" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "resampy", specifier = ">=0.4.3" },
-    { name = "rule-engine", specifier = ">=4.5.3" },
-    { name = "scipy", specifier = ">=1.16.3" },
-    { name = "tensorflow", marker = "extra == 'full'", specifier = ">=2.16.0" },
-    { name = "tensorflow-hub", marker = "extra == 'full'", specifier = ">=0.16.1" },
-    { name = "tflite-runtime", specifier = ">=2.14.0" },
-    { name = "umik-base-app", specifier = ">=0.4.4a1.dev0" },
-]
-provides-extras = ["full"]
-
-[package.metadata.requires-dev]
-analysis = [
-    { name = "boto3", specifier = ">=1.42.19" },
-    { name = "markdown", specifier = ">=3.10" },
-    { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "pandas", specifier = ">=2.3.3" },
-    { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "weasyprint", specifier = ">=67.0" },
-]
-dev = [
-    { name = "mypy", specifier = "~=1.18.2" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "ruff", specifier = "~=0.14.1" },
-    { name = "setuptools", specifier = ">=80.0" },
-    { name = "stdeb", specifier = ">=0.11.0" },
-]
-publish = [
-    { name = "boto3", specifier = ">=1.35" },
-    { name = "python-debian", specifier = ">=0.1.49" },
-    { name = "python-gnupg", specifier = ">=0.5" },
 ]
 
 [[package]]
