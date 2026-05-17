@@ -640,12 +640,12 @@
   ],
   "refresh": "5s",
   "schemaVersion": 38,
-  "tags": ["edge-monitor", "acoustics", "ai", "iot"],
+  "tags": ["ai-acoustic-monitor", "acoustics", "ai", "iot"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "🎙️ Edge AI Acoustic Monitor",
-  "uid": "edge-monitor-v1",
+  "uid": "ai-acoustic-monitor-v1",
   "version": 1
 }

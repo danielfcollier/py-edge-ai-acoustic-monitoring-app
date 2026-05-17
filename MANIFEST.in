@@ -9,6 +9,9 @@ recursive-include src/setup *
 
 recursive-include src/app/vendor *
 
+recursive-include docs/user_manual *.yaml
+include docs/user_manual/USER_MANUAL.md
+
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .DS_Store

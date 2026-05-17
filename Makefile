@@ -94,18 +94,15 @@ setup-models: ## Download YAMNet models and class maps.
 .PHONY: run run-default run-sim report
 run: ## Run Edge Monitor (Auto-detect config).
 	@echo -e "$(GREEN)>>> Starting Edge Monitor...$(NC)"
-	@$(UV) run edge-monitor-run
+	@$(UV) run ai-acoustic-monitor-run
 
 run-default: ## Run with default PC microphone (No UMIK-1).
 	@echo -e "$(GREEN)>>> Starting with Default Microphone...$(NC)"
-	@$(UV) run edge-monitor-run --device "default"
+	@$(UV) run ai-acoustic-monitor-run --device "default"
 
 run-sim: ## Run in simulation mode (if supported by base app).
-	@$(UV) run edge-monitor-run --config "security_policy.yaml" --device "sysdefault"
+	@$(UV) run ai-acoustic-monitor-run --config "security_policy.yaml" --device "sysdefault"
 
-convert: ## Convert WAV recordings to OGG/MP3 (ARGS="recordings/ --format ogg mp3")
-	@echo -e "$(GREEN)>>> Converting audio files...$(NC)"
-	@$(UV) run edge-monitor-convert $(ARGS)
 
 report: ## Generate PDF report from cloud metrics.
 	@echo -e "$(GREEN)>>> Generating Analytics Report...$(NC)"
@@ -155,8 +152,12 @@ bump-major: ## Bump major version (0.1.0 → 1.0.0)
 # DEB PACKAGING
 # ==============================================================================
 DISTRO ?= bookworm
+VERSION_BUMP ?= patch
 
-.PHONY: install-build-deps vendor build-deb clean-deb test-deb publish-deb
+# Read DEB_S3_BUCKET from .env if not passed on the command line
+DEB_BUCKET ?= $(shell grep '^DEB_S3_BUCKET=' .env 2>/dev/null | cut -d= -f2 | tr -d '"')
+
+.PHONY: install-build-deps vendor build-deb clean-deb test-deb publish-deb release
 
 install-build-deps: ## Install system build tools for .deb packaging
 	sudo apt-get update
@@ -185,7 +186,7 @@ test-deb: ## Test .deb in a clean Docker container (DISTRO=bookworm|noble)
 		apt-get update -qq && \
 		apt-get install -y /dist/deb_dist/*.deb && \
 		printf '\n--- CLI ---\n' && \
-		edge-monitor-run --help && \
+		ai-acoustic-monitor-run --help && \
 		printf '\n--- Service templates ---\n' && \
 		ls -l /usr/lib/ai-acoustic-monitor/setup/"
 
@@ -197,3 +198,18 @@ publish-deb: ## Publish built .deb to S3 APT repository (reads .env for credenti
 	@set -a && . ./.env && set +a && \
 	$(UV) run --group publish python publish_repo.py \
 		"$$(find deb_dist -name '*.deb' -type f | head -1)" $(BUCKET)
+
+release: ## Bump version, build .deb, publish to MGC (VERSION_BUMP=patch|minor|major)
+	@if [ -z "$(DEB_BUCKET)" ]; then \
+		printf "%s\n" "Error: DEB_S3_BUCKET not set. Add to .env: DEB_S3_BUCKET=your-bucket"; \
+		printf "%s\n" "  or pass: make release DEB_BUCKET=your-bucket"; \
+		exit 1; \
+	fi
+	@printf "%s\n" "🔖 Bumping $(VERSION_BUMP) version..."
+	@$(MAKE) bump-$(VERSION_BUMP)
+	@printf "%s\n" "📦 Building .deb..."
+	@$(MAKE) build-deb
+	@printf "%s\n" "🚀 Publishing to s3://$(DEB_BUCKET)..."
+	@$(MAKE) publish-deb BUCKET=$(DEB_BUCKET)
+	@printf "%s\n" ""
+	@printf "%s\n" "✅ Release complete. Install instructions printed above."

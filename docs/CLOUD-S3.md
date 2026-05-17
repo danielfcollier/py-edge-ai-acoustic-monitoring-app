@@ -96,7 +96,7 @@ services:
     provider: "gcp"
     bucket_name: "acoustic-logs"
     region: "br-se1"                      # unused by GCP; kept for schema consistency
-    gcp_credentials_path: "/etc/edge-monitor/gcp-key.json"
+    gcp_credentials_path: "/etc/ai-acoustic-monitor/gcp-key.json"
 ```
 
 ---
