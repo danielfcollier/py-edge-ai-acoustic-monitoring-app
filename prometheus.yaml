@@ -2,7 +2,7 @@ global:
   scrape_interval: 2s  # Very fast scraping for "Real-Time" feel
 
 scrape_configs:
-  - job_name: 'edge-monitor'
+  - job_name: 'ai-acoustic-monitor'
     static_configs:
       # If app is on host machine (outside docker):
       - targets: ['host.docker.internal:9090'] 

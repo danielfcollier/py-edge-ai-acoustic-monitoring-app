@@ -1,7 +1,7 @@
 [project]
-name = "edge-ai-acoustic-monitoring-app"
+name = "ai-acoustic-monitoring-app"
 version = "0.1.0"
-description = "Edge AI Acoustic Monitoring App"
+description = "AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
 ]
@@ -14,6 +14,7 @@ dependencies = [
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
     "tflite-runtime>=2.14.0",
+    "numpy>=1.23.0,<2",
     "rule-engine>=4.5.3",
     "pyyaml>=6.0.3",
     "boto3>=1.42.19",
@@ -32,10 +33,10 @@ dependencies = [
 "Bug Tracker" = "https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/issues"
 
 [project.scripts]
-edge-monitor-run = "app.main:main"
-edge-monitor-setup-models = "scripts.setup_yamnet:main"
-edge-monitor-install-service = "scripts.install_service:main"
-edge-monitor-convert = "scripts.convert_audio:main"
+ai-acoustic-monitor-run = "app.main:main"
+ai-acoustic-monitor = "scripts.configure:main"
+ai-acoustic-monitor-setup-models = "scripts.setup_yamnet:main"
+ai-acoustic-monitor-install-service = "scripts.install_services:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -70,7 +70,7 @@ sudo reboot
 ```bash
 sudo raspi-config    # System Options → Hostname
 # or
-sudo hostnamectl set-hostname edge-monitor-01
+sudo hostnamectl set-hostname ai-acoustic-monitor-01
 ```
 
 ## 3. Microphone Setup
@@ -119,7 +119,7 @@ arecord -D hw:1,0 -f S16_LE -r 16000 -d 5 test.wav && aplay test.wav
 Download your UMIK-1 calibration file from [miniDSP's portal](https://www.minidsp.com/userdownloads) using the serial number printed on the mic's label. Copy it to the Pi:
 
 ```bash
-scp 7175488.txt pi@raspberrypi.local:~/edge-monitor/src/umik-1/
+scp 7175488.txt pi@raspberrypi.local:~/ai-acoustic-monitor/src/umik-1/
 ```
 
 Set the path in `security_policy.yaml`:
@@ -131,12 +131,12 @@ hardware:
 
 ## 4. Running as a Systemd Service
 
-The installer script (`edge-monitor-install-service`) copies config files to `/etc/edge-monitor/` and installs the appropriate systemd units.
+The installer script (`ai-acoustic-monitor-install-service`) copies config files to `/etc/ai-acoustic-monitor/` and installs the appropriate systemd units.
 
 ### Install (monolithic mode — one Pi does everything)
 
 ```bash
-sudo edge-monitor-install-service \
+sudo ai-acoustic-monitor-install-service \
     --config security_policy.yaml \
     --env .env \
     --calib src/umik-1/7175488.txt \
@@ -148,7 +148,7 @@ sudo edge-monitor-install-service \
 On the **producer Pi** (mic + AI inference):
 
 ```bash
-sudo edge-monitor-install-service \
+sudo ai-acoustic-monitor-install-service \
     --config security_policy.yaml \
     --env .env \
     --mode distributed
@@ -157,7 +157,7 @@ sudo edge-monitor-install-service \
 On the **consumer Pi** (recording + cloud upload):
 
 ```bash
-sudo edge-monitor-install-service \
+sudo ai-acoustic-monitor-install-service \
     --config security_policy.yaml \
     --env .env \
     --mode distributed
@@ -167,22 +167,22 @@ sudo edge-monitor-install-service \
 
 ```bash
 # Start / stop / restart
-sudo systemctl start edge-monitor
-sudo systemctl stop edge-monitor
-sudo systemctl restart edge-monitor
+sudo systemctl start ai-acoustic-monitor
+sudo systemctl stop ai-acoustic-monitor
+sudo systemctl restart ai-acoustic-monitor
 
 # Check status
-sudo systemctl status edge-monitor
+sudo systemctl status ai-acoustic-monitor
 
 # Enable / disable auto-start on boot
-sudo systemctl enable edge-monitor
-sudo systemctl disable edge-monitor
+sudo systemctl enable ai-acoustic-monitor
+sudo systemctl disable ai-acoustic-monitor
 
 # View live logs
-journalctl -fu edge-monitor
+journalctl -fu ai-acoustic-monitor
 
 # View errors since last boot
-journalctl -p err -b -u edge-monitor
+journalctl -p err -b -u ai-acoustic-monitor
 ```
 
 ### Service configuration notes
@@ -192,13 +192,13 @@ The service unit uses `CPUSchedulingPolicy=fifo` (real-time FIFO) at priority 99
 To reload config without a full restart (e.g. after editing `security_policy.yaml`):
 
 ```bash
-sudo systemctl restart edge-monitor
+sudo systemctl restart ai-acoustic-monitor
 ```
 
-Config files installed at `/etc/edge-monitor/`:
+Config files installed at `/etc/ai-acoustic-monitor/`:
 
 ```
-/etc/edge-monitor/
+/etc/ai-acoustic-monitor/
   security_policy.yaml
   .env                    ← chmod 600 (secrets)
   7175488.txt             ← calibration file (if --calib was passed)
@@ -209,20 +209,20 @@ Config files installed at `/etc/edge-monitor/`:
 ### Live log tail
 
 ```bash
-journalctl -fu edge-monitor
+journalctl -fu ai-acoustic-monitor
 ```
 
 ### Filter by log level
 
 ```bash
 # Errors only, current boot
-journalctl -p err -b -u edge-monitor
+journalctl -p err -b -u ai-acoustic-monitor
 
 # Last 100 lines
-journalctl -u edge-monitor -n 100
+journalctl -u ai-acoustic-monitor -n 100
 
 # Since a specific time
-journalctl -u edge-monitor --since "2026-05-13 10:00:00"
+journalctl -u ai-acoustic-monitor --since "2026-05-13 10:00:00"
 ```
 
 ### System metrics heartbeat
@@ -240,9 +240,9 @@ Send `/status` to the Telegram bot. The reply shows `Raw` and `Upload` queue dep
 ### Process health
 
 ```bash
-htop                                   # interactive — find edge-monitor-run
-ps aux | grep edge-monitor-run         # quick check
-systemctl status edge-monitor          # shows PID, memory, CPU
+htop                                   # interactive — find ai-acoustic-monitor-run
+ps aux | grep ai-acoustic-monitor-run         # quick check
+systemctl status ai-acoustic-monitor          # shows PID, memory, CPU
 ```
 
 ## 6. Performance & Thermal
@@ -342,11 +342,6 @@ wormhole send evidence-12345.wav     # run on Pi, paste code on laptop
 wormhole receive <code>              # run on laptop
 ```
 
-### Convert recordings for WhatsApp before transferring
-
-```bash
-edge-monitor-convert /mnt/recordings/ --format ogg --out /mnt/recordings/whatsapp/
-```
 
 ## 8. Networking & Remote Access
 
@@ -398,17 +393,17 @@ ssh-copy-id -i ~/.ssh/id_rpi.pub pi@raspberrypi.local
 ### App won't start — check the service log first
 
 ```bash
-journalctl -p err -b -u edge-monitor
+journalctl -p err -b -u ai-acoustic-monitor
 ```
 
 Common causes:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `No such file: security_policy.yaml` | Config not in `/etc/edge-monitor/` | Re-run `edge-monitor-install-service` |
-| `TelegramBotClient` credentials error | Missing `.env` or wrong token | Check `/etc/edge-monitor/.env` |
+| `No such file: security_policy.yaml` | Config not in `/etc/ai-acoustic-monitor/` | Re-run `ai-acoustic-monitor-install-service` |
+| `TelegramBotClient` credentials error | Missing `.env` or wrong token | Check `/etc/ai-acoustic-monitor/.env` |
 | `Failed to open audio device` | UMIK-1 not recognised | Check `arecord --list-devices`, replug mic |
-| Service restarts in a loop | Python exception at startup | Check full log: `journalctl -u edge-monitor -n 200` |
+| Service restarts in a loop | Python exception at startup | Check full log: `journalctl -u ai-acoustic-monitor -n 200` |
 | High memory use / OOM | 2 GB Pi running full TF | Use TFLite (`use_tflite: true`) or add swap |
 
 ### Mic not detected after reboot
@@ -448,8 +443,8 @@ SUBSYSTEM=="sound", ATTRS{idVendor}=="2752", ATTRS{idProduct}=="0011", ATTR{inde
 
 If `Upload:` is non-zero and growing:
 - Check internet: `ping api.telegram.org`
-- Check cloud credentials in `/etc/edge-monitor/.env`
-- Check uploader logs: `journalctl -u edge-monitor | grep "Upload\|cloud\|S3"`
+- Check cloud credentials in `/etc/ai-acoustic-monitor/.env`
+- Check uploader logs: `journalctl -u ai-acoustic-monitor | grep "Upload\|cloud\|S3"`
 
 ## 10. Quick Command Reference
 
@@ -468,9 +463,9 @@ If `Upload:` is non-zero and growing:
 
 | Command | What it shows |
 |---|---|
-| `journalctl -fu edge-monitor` | Live service log |
-| `journalctl -p err -b -u edge-monitor` | Errors since last boot |
-| `journalctl -u edge-monitor -n 100` | Last 100 lines |
+| `journalctl -fu ai-acoustic-monitor` | Live service log |
+| `journalctl -p err -b -u ai-acoustic-monitor` | Errors since last boot |
+| `journalctl -u ai-acoustic-monitor -n 100` | Last 100 lines |
 | `tail -f recordings/metrics_buffer.csv` | Heartbeat metrics live |
 
 ### Audio
@@ -486,10 +481,10 @@ If `Upload:` is non-zero and growing:
 
 | Command | Action |
 |---|---|
-| `sudo systemctl status edge-monitor` | Check if running |
-| `sudo systemctl restart edge-monitor` | Restart (e.g. after config change) |
-| `sudo systemctl enable edge-monitor` | Enable auto-start on boot |
-| `sudo systemctl disable edge-monitor` | Disable auto-start |
+| `sudo systemctl status ai-acoustic-monitor` | Check if running |
+| `sudo systemctl restart ai-acoustic-monitor` | Restart (e.g. after config change) |
+| `sudo systemctl enable ai-acoustic-monitor` | Enable auto-start on boot |
+| `sudo systemctl disable ai-acoustic-monitor` | Disable auto-start |
 
 ### Package management
 
