@@ -128,7 +128,7 @@ hardware:
 
 | Tier | What you get |
 |---|---|
-| 🖥️ Built-in / system default (`make run-default`) | AI classification + recording. No calibrated dBSPL. |
+| 🖥️ Built-in / system default | AI classification + recording. No calibrated dBSPL. Pass `--device default` if the UMIK is not auto-detected. |
 | 🔌 Generic USB microphone | Same as above with better audio quality. |
 | 🎛️ Calibrated measurement mic (set `calibration_file`) | Accurate dBSPL + FIR frequency correction. Auto-detected at startup. |
 
@@ -361,7 +361,7 @@ policies:
 
 ### 2.7 Reporting 📈
 
-Used by the offline PDF report generator (`make report`). Does not affect real-time monitoring.
+Used by the offline PDF report generator. Does not affect real-time monitoring.
 
 ```yaml
 reporting:
@@ -383,14 +383,16 @@ reporting:
 ## 3. Running the App 🚀
 
 ```bash
-# Auto-detect UMIK-1 microphone
-make run
+# Run the monitor (config and credentials installed by the wizard)
+ai-acoustic-monitor-run \
+  --config /etc/ai-acoustic-monitor/security_policy.yaml \
+  --env /etc/ai-acoustic-monitor/.env
 
-# Use the system default microphone (laptop / dev machine)
-make run-default
-
-# Explicit arguments
-uv run edge-monitor-run --config security_policy.yaml --env .env
+# Force the system default microphone (laptop / desktop without UMIK)
+ai-acoustic-monitor-run \
+  --config /etc/ai-acoustic-monitor/security_policy.yaml \
+  --env /etc/ai-acoustic-monitor/.env \
+  --device default
 ```
 
 ### CLI options
@@ -400,7 +402,7 @@ uv run edge-monitor-run --config security_policy.yaml --env .env
 | `--config PATH` | `security_policy.yaml` | Path to the YAML policy file. |
 | `--env PATH` | `.env` | Path to the credentials file. |
 
-Additional flags are passed through to the underlying `umik-base-app` (`--device`, `--run-mode`, `--zmq-host`, etc.). Run `uv run edge-monitor-run --help` for the full list.
+Additional flags are passed through to the underlying `umik-base-app` (`--device`, `--run-mode`, `--zmq-host`, etc.). Run `ai-acoustic-monitor-run --help` for the full list.
 
 ### Run modes
 
@@ -571,7 +573,7 @@ Add this job to your `prometheus.yml` and reload Prometheus:
 
 ```yaml
 scrape_configs:
-  - job_name: edge-monitor
+  - job_name: ai-acoustic-monitor
     static_configs:
       - targets: ["<device-ip>:8000"]
     scrape_interval: 5s
@@ -579,11 +581,11 @@ scrape_configs:
 
 ### Grafana dashboard
 
-A ready-to-import dashboard is provided at `docs/grafana/edge-monitor-dashboard.json`.
+A ready-to-import dashboard is provided at `docs/grafana/ai-acoustic-monitor-dashboard.json`.
 
 **Import steps:**
 1. Open Grafana → **Dashboards** → **Import**
-2. Upload `edge-monitor-dashboard.json`
+2. Upload `ai-acoustic-monitor-dashboard.json`
 3. In the datasource dropdown, map `DS_PROMETHEUS` to your Prometheus instance
 4. Click **Import**
 
@@ -620,13 +622,13 @@ For production deployments, set `LOG_LEVEL_POLICY_ENGINE=INFO` and `LOG_LEVEL_FE
 
 ### No audio events detected
 
-1. Confirm the microphone is recognised: `make list-devices`.
+1. Confirm the microphone is recognised: run `ai-acoustic-monitor --test` — it lists all detected input devices. Alternatively, `arecord -l` shows ALSA capture devices.
 2. Check the SAD thresholds — if `sad_threshold_rms` is too high, all frames are silently dropped. Lower it and watch the debug logs.
 3. Set `LOG_LEVEL_FEATURE_EXTRACTOR=DEBUG` in `.env` to see per-frame SAD decisions.
 
 ### Privacy mode not clearing after reboot
 
-By default, privacy mode is stored in `/dev/shm/privacy_mode`, which is a RAM disk and is cleared on reboot. If you set `privacy_mode_state_file` to a real path (e.g. `/var/lib/edge-monitor/privacy_mode`), the state persists across reboots — send `/privacy off` via Telegram to clear it.
+By default, privacy mode is stored in `/dev/shm/privacy_mode`, which is a RAM disk and is cleared on reboot. If you set `privacy_mode_state_file` to a real path (e.g. `/var/lib/ai-acoustic-monitor/privacy_mode`), the state persists across reboots — send `/privacy off` via Telegram to clear it.
 
 ### Upload queue keeps growing
 
@@ -644,10 +646,10 @@ Evidence files are written to `recording_output_path` before upload. If upload f
 
 ```bash
 # Follow live output when run as a systemd service
-journalctl -fu edge-monitor
+journalctl -fu ai-acoustic-monitor
 
 # Show errors since last boot
-journalctl -p err -b -u edge-monitor
+journalctl -p err -b -u ai-acoustic-monitor
 
 # Watch the metrics heartbeat CSV grow
 tail -f metrics_buffer.csv

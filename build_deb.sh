@@ -28,7 +28,7 @@ cat > debian/postinst << 'POSTINST'
 #!/bin/sh
 set -e
 # Vendored C extensions were compiled for Python 3.11; patch the auto-generated shebang.
-for cmd in edge-monitor-run edge-monitor-setup-models edge-monitor-install-service; do
+for cmd in ai-acoustic-monitor-run ai-acoustic-monitor ai-acoustic-monitor-setup-models ai-acoustic-monitor-install-service; do
     if [ -f "/usr/bin/$cmd" ]; then
         sed -i '1s|^#!/usr/bin/python3$|#!/usr/bin/python3.11|' "/usr/bin/$cmd"
     fi
@@ -45,13 +45,20 @@ echo "Verifying package integrity..."
 cd ../..
 DEB_FILE=$(find deb_dist -name "*.deb" -type f | head -1)
 
-if ! dpkg -c "$DEB_FILE" | grep "usr/bin/edge-monitor-run" | grep -q .; then
-    echo "Error: CLI entry point 'edge-monitor-run' missing from .deb!" >&2
-    exit 1
-fi
+for _cmd in ai-acoustic-monitor-run ai-acoustic-monitor; do
+    if ! dpkg -c "$DEB_FILE" | grep "usr/bin/$_cmd" | grep -q .; then
+        echo "Error: CLI entry point '$_cmd' missing from .deb!" >&2
+        exit 1
+    fi
+done
 
 if ! dpkg -c "$DEB_FILE" | grep "usr/lib/ai-acoustic-monitor/setup" | grep -q .; then
     echo "Error: Service templates missing from /usr/lib/ai-acoustic-monitor/setup!" >&2
+    exit 1
+fi
+
+if ! dpkg -c "$DEB_FILE" | grep "usr/lib/ai-acoustic-monitor/profiles" | grep -q .; then
+    echo "Error: Policy profiles missing from /usr/lib/ai-acoustic-monitor/profiles!" >&2
     exit 1
 fi
 

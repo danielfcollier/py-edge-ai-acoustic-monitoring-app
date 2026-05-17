@@ -1,228 +1,308 @@
-# 🎙️ Edge AI Acoustic Monitoring App
+# 🎙️ AI Acoustic Monitor
 
-A privacy-aware, edge-deployed acoustic monitoring system that runs on **any Linux machine** — Raspberry Pi, server, or desktop — with a microphone. It uses YAMNet (Google's audio classification model) to identify sound events in real time, applies a configurable security policy, records evidence audio, and uploads to cloud storage — while keeping the hot path fast enough for continuous 24/7 monitoring.
+Real-time sound intelligence on any Linux machine — Raspberry Pi, server, or desktop. Classifies 521 sound events using YAMNet AI, applies your detection rules, and sends Telegram alerts with cloud evidence uploads.
 
-> 🍎 🪟 macOS and Windows may work with minor adjustments — GPIO heartbeat and `/dev/shm` privacy state are Linux-specific features; both can be disabled in config.
+No coding required. Configure with a wizard, run as a `systemd` service.
 
-## ✨ Features
 
-- 🧠 **Real-time AI classification** via YAMNet (521 sound classes: dog barks, glass breaks, voices, etc.)
-- 🚪 **Two-stage Sound Activity Detection (SAD)** gate — cheap RMS/Flux check before expensive AI inference
-- 🎛️ **FIR calibration** applied async in a background worker, so the recording pipeline never stalls
-- 📋 **YAML-driven policy engine** with per-rule `ignore_privacy` flag for critical events
-- 🔒 **Privacy mode** — toggle via Telegram command; state survives in-process restarts (stored in `/dev/shm`)
-- 📱 **Telegram bot**: receive alerts _and_ control the device with `/privacy` commands
-- ☁️ **Cloud upload** to Magalu Object Storage, AWS S3, or GCP (with offline disk fallback)
-- 📊 **Prometheus metrics** export + Grafana-ready dashboards
-- 💓 **Health monitoring**: GPIO heartbeat pin + healthchecks.io ping
+## 📦 Install
 
-## 🖥️ Hardware
+```bash
+# Add the repository
+curl -fsSL https://YOUR_APT_REPO_URL/pubkey.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/ai-acoustic-monitor.gpg
 
-The app runs on **any Linux machine** — Raspberry Pi, server, or desktop. Storage: USB SSD recommended for recordings.
+echo "deb [signed-by=/usr/share/keyrings/ai-acoustic-monitor.gpg] \
+  https://YOUR_APT_REPO_URL bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/ai-acoustic-monitor.list
 
-### 🎙️ Microphone support
+sudo apt-get update && sudo apt-get install ai-acoustic-monitor
+```
 
-Three tiers — pick whatever you have:
+> **Requirements**: Debian/Ubuntu (bookworm or noble), `libportaudio2`, `libsndfile1`.
+> These are installed automatically as package dependencies.
 
-| Tier | Examples | What you get |
+
+## 🚀 Setup
+
+Everything goes through the `ai-acoustic-monitor` wizard:
+
+```bash
+# 1. Set up Telegram and cloud credentials
+ai-acoustic-monitor --configure credentials
+
+# 2. Choose a profile and generate your config file
+ai-acoustic-monitor --configure
+
+# 3. Validate that all services are wired up correctly
+ai-acoustic-monitor --test
+
+# 4. Install as a systemd service (starts on boot)
+sudo ai-acoustic-monitor --install
+
+# View the full user manual at any time
+ai-acoustic-monitor --manual
+```
+
+### Deployment modes
+
+When you run `--install`, you choose how to deploy:
+
+| Mode | Command | Description |
 |---|---|---|
-| 🖥️ Built-in / system default | Laptop mic, any system audio input | AI classification + recording; no calibrated dBSPL |
-| 🔌 Generic USB microphone | Any USB mic | Same as above with better audio quality |
-| 🎛️ Calibrated measurement mic | See table below | Accurate dBSPL + FIR frequency correction |
+| **Monolith** | `sudo ai-acoustic-monitor --install` | Single process — audio capture, AI, upload. Default. |
+| **Distributed** | `sudo ai-acoustic-monitor --install distributed` | Producer captures audio via ZMQ; consumer handles recording and upload. Use when capture device and processing server are separate. |
 
-Calibrated microphones are **auto-detected by name** at startup when a calibration file is configured — no manual device ID needed.
 
-#### Supported calibrated microphones (via `umik-base-app`)
+## 🗂️ Profiles
 
-| Microphone | Manufacturer | Connection | Sample Rates |
-|---|---|---|---|
-| UMIK-1 | miniDSP | USB | 48 kHz |
-| UMIK-2 | miniDSP | USB | 48 / 96 / 192 kHz |
-| UMM-6 | Dayton Audio | USB | 48 kHz |
-| XREF 20 | Sonarworks | USB | 48 kHz |
-| EMX-7150 | iSEMcon | USB | 48 / 96 kHz |
-| MM 1 | Beyerdynamic | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
-| M23 | Earthworks | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
-| M30 | Earthworks | Analog (via interface) | 44.1 / 48 / 96 / 192 kHz |
-| TM1 Plus | Audix | Analog (via interface) | 44.1 / 48 / 96 kHz |
+The wizard offers four ready-made detection profiles. Pick one and customise from there.
 
-Analog microphones require an external USB audio interface and `--device-id` to select the interface.
+### 🏠 Home Security & Peace
 
-## 🏗️ Architecture
+Detects break-in sounds at any time, suspicious activity at night, and logs pet behavior.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for diagrams. In brief:
+- Glass break / shatter / gunshot — immediate alert (ignores privacy mode)
+- Knocks, footsteps, doors — alert only at night
+- Dog barking — silent log for later review
 
-```
-Audio Source
-  └─ BasicMetricsSink       (RMS, Flux, dBSPL → context.metrics)
-  └─ SADGatewaySink         (noise gate — skip AI if silent)
-  └─ FeatureExtractorSink   (YAMNet inference → context.current_event_label)
-  └─ PolicyEngineSink       (evaluate YAML rules → context.actions_to_take)
-  └─ SmartBufferSink        (record raw audio → raw_queue)
-        │
-   raw_queue
-        │
-  RecorderTransformerWorker (optional FIR calibration → upload_queue)
-        │
-   upload_queue
-        │
-  CloudUploaderService      (stream WAV + CSV to cloud)
-```
+### 👶 Baby / Child Monitor
 
-Background services: `HealthMonitorService`, `SystemHeartbeatService`, `TelegramCommandReceiver`.
+Tuned for nursery use with low confidence thresholds to catch early distress.
 
-## 🚀 Quick Start
+- Baby crying / sobbing / whimpering — immediate alert
+- Any sudden loud noise above 70 dBSPL — immediate alert
+- Babbling, laughter, speech — logged without alerting
 
-### 1. 📦 Install dependencies
+### 🌳 Forest / Outdoor Monitor
 
-```bash
-# System audio libraries (Ubuntu/Debian/Raspberry Pi OS)
-make setup
+Detects human intrusion and machinery in natural or remote outdoor spaces.
 
-# Python dependencies (creates .venv with Python 3.11)
-make install
-```
+- Chainsaw, engine, vehicle sounds — alert and record
+- Gunshots or explosions — immediate alert
+- Wildlife sounds — logged for behavioral analysis
 
-### 2. 🧠 Download AI models
+### 🏭 Industrial / Server Room
 
-```bash
-make setup-models
-```
+Monitors for equipment failure and safety events in machine-heavy environments.
 
-### 3. ⚙️ Configure
+- Fire alarms, sirens, buzzers — immediate alert
+- Grinding, hammering, impact sounds — alert and log
+- Unusual silence (e.g. fan failure) — alert when dBSPL drops below threshold
 
-Copy `.env.example` to `.env` and fill in your credentials:
 
-```ini
-# Telegram
-TELEGRAM_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
+## ⚙️ Configuration
 
-# Magalu Object Storage (S3-compatible)
-MAGALU_KEY=your_access_key
-MAGALU_SECRET=your_secret_key
-```
+The wizard generates a complete `security_policy.yaml`. The most common things to adjust:
 
-Edit `security_policy.yaml` to set calibration file path, detection thresholds, and rules:
+### Detection sensitivity
 
 ```yaml
-hardware:
-  calibration_file: "src/umik-1/your_serial.txt"   # path to UMIK-1 calibration file
-
 feature_extractor:
-  sad_threshold_rms: 0.002
-  sad_threshold_dbspl: 45.0
+  sad_threshold_rms: 0.002      # lower = more sensitive to quiet sounds
+  sad_threshold_dbspl: 45.0     # minimum dBSPL to pass to AI (calibrated mic only)
+```
 
+### Adding or editing a detection rule
+
+```yaml
 policies:
   - name: "Dog Bark"
-    condition: "current_event_label == 'Dog' and current_confidence > 0.6"
-    actions: ["telegram_alert", "record_evidence", "cloud_upload"]
-    ignore_privacy: false
+    condition: "current_event_label in ['Dog', 'Bark'] and current_confidence > 0.6"
+    actions:
+      - "telegram_alert"
+      - "record_evidence"
+      - "cloud_upload"
+    ignore_privacy: false   # set true to fire even when privacy mode is active
 ```
 
-### 4. ▶️ Run
+**Condition variables**
+
+| Variable | Type | Description |
+|---|---|---|
+| `current_event_label` | str | Top YAMNet classification (e.g. `"Dog"`, `"Glass"`) |
+| `current_confidence` | float | Confidence score, 0.0–1.0 |
+| `metrics['dbspl']` | float | Sound level in dB SPL (calibrated mic required) |
+| `metrics['rms']` | float | RMS amplitude of the audio frame |
+| `metrics['flux']` | float | Spectral flux — spikes on sudden sound events |
+| `is_day` / `is_night` | bool | Time-of-day driven by `day_start_hour` / `night_start_hour` |
+
+**Available actions**
+
+| Action | Description |
+|---|---|
+| `telegram_alert` | Send Telegram message (subject to `alert_cooldown_seconds`) |
+| `record_evidence` | Capture WAV file to `recording_output_path` |
+| `cloud_upload` | Upload WAV + metadata CSV to cloud storage |
+| `log_metadata` | Write CSV entry only — no audio capture or upload |
+
+### Offline mode
+
+Set `internet_enabled: false` to run the monitor without any network access. Telegram and cloud upload are disabled. Recordings are saved locally to `recording_output_path`.
+
+```yaml
+services:
+  internet_enabled: false
+  cloud_storage_enabled: false
+  telegram_enabled: false
+  recording_output_path: "/mnt/usb_ssd/recordings"
+```
+
+Use this when the device has no internet connection, is air-gapped, or you want recordings only.
+
+### Storing recordings on external storage
+
+By default recordings go to `./recordings` relative to the working directory. Set an absolute path to write to a USB drive, NFS share, or other storage:
+
+```yaml
+services:
+  recording_output_path: "/mnt/usb_ssd/recordings"   # USB SSD
+  # recording_output_path: "/mnt/nas/ai-acoustic-monitor"   # NFS/CIFS mount
+```
+
+The directory is created automatically if it doesn't exist. Make sure the service user has write permission to the mount point.
+
+### Prometheus metrics server
+
+Enabled by default on port 8000. Control it in the `services:` block:
+
+```yaml
+services:
+  prometheus_enabled: true    # set false to disable entirely
+  prometheus_port: 8000
+```
+
+When enabled, metrics are available at `http://<device-ip>:8000/metrics` and verified by `--test`.
+
+For the full configuration reference, run `ai-acoustic-monitor --manual`.
+
+
+## 🔍 Validating your setup
+
+After configuring, run the built-in test suite:
 
 ```bash
-# Auto-detect microphone and run
-make run
-
-# Run with default system microphone
-make run-default
-
-# Run with explicit policy and env files
-uv run edge-monitor-run --config security_policy.yaml --env .env
+ai-acoustic-monitor --test
+ai-acoustic-monitor --test --config security_policy.yaml --env ~/.config/ai-acoustic-monitor/.env
 ```
 
-## 📱 Telegram Commands
+```
+════════════════════════════════════════════════════════════════
+  🔍 Service Validation  —  security_policy.yaml
+════════════════════════════════════════════════════════════════
 
-The bot both sends alerts and accepts commands from the configured `TELEGRAM_CHAT_ID`.
+  ✅ Profile                 3 rule(s), calibration configured
+  ✅ Calibration file        src/umik-1/7175488.txt (12 KB)
+  ✅ Microphone              UMIK-1 detected (device 3)
+  ✅ Sample recording        1.0s, 187 KB
+  ✅ Telegram                message sent to chat 123456789
+  ✅ Cloud storage           Magalu br-se1 bucket 'acoustic-logs' OK
+  ⏭️  Heartbeat (HC ping)   HC_PING_URL not configured (skipped)
+  ✅ Prometheus              HTTP 200 on localhost:8000/metrics
+
+────────────────────────────────────────────────────────────────
+  All 8 checks passed.
+```
+
+## ▶️ Running
+
+```bash
+# Run the monitor directly
+ai-acoustic-monitor-run --config security_policy.yaml --env ~/.config/ai-acoustic-monitor/.env
+
+# Check the systemd service
+sudo systemctl status ai-acoustic-monitor
+journalctl -fu ai-acoustic-monitor
+```
+
+## 📱 Telegram Bot
+
+Set up a bot via [@BotFather](https://t.me/BotFather) and add the token + chat ID during `ai-acoustic-monitor --configure credentials`.
+
+### Alerts
+
+When a policy fires, you receive:
+
+```
+🚨 Policy Triggered
+🛡️ Rule: Glass Break
+👂 Detected: Glass (0.91)
+```
+
+### Commands
 
 | Command | Description |
 |---|---|
-| `/privacy on` | Activate privacy mode for **4 hours** (default — no duration needed) |
-| `/privacy on 2h` | Activate for a custom duration |
-| `/privacy on 30m` | Activate for 30 minutes |
-| `/privacy on 1d` | Activate for a day |
-| `/privacy off` | Deactivate immediately |
-| `/privacy status` | Report current state and remaining time |
+| `/privacy on` | Suppress non-critical alerts for 4 hours |
+| `/privacy on 2h` | Suppress for a specific duration (`Nh`, `Nm`, `Nd`) |
+| `/privacy off` | Re-enable all alerts immediately |
+| `/privacy status` | Show current state and remaining time |
+| `/status` | System snapshot (label, CPU, RAM, temp, queue depth) |
 
-Supported duration formats: `Nh`, `Nm`, `Nd`, or a plain integer (treated as minutes).
+Rules with `ignore_privacy: true` always fire regardless of privacy state.
 
-Rules marked `ignore_privacy: true` (e.g. glass break, gunshot) fire regardless of privacy state.
+
+## 🎙️ Microphone
+
+The app works with any microphone. A calibrated measurement mic unlocks accurate dBSPL and physics-based triggers.
+
+| Tier | Examples | dBSPL accuracy |
+|---|---|---|
+| 🖥️ Built-in / system default | Laptop mic | No (AI + RMS/Flux only) |
+| 🔌 Generic USB microphone | Any USB mic | No |
+| 🎛️ Calibrated measurement mic | See below | ✅ Full calibration |
+
+Calibrated mics are **auto-detected by USB name** when a calibration file is configured — no manual device ID needed.
+
+**Supported calibrated microphones**
+
+| Microphone | Manufacturer | Connection |
+|---|---|---|
+| UMIK-1 | miniDSP | USB |
+| UMIK-2 | miniDSP | USB |
+| UMM-6 | Dayton Audio | USB |
+| XREF 20 | Sonarworks | USB |
+| EMX-7150 | iSEMcon | USB |
+| MM 1 | Beyerdynamic | Analog (via interface) |
+| M23 / M30 | Earthworks | Analog (via interface) |
+| TM1 Plus | Audix | Analog (via interface) |
+
+Set the calibration file path during `ai-acoustic-monitor --configure` or in your YAML:
+
+```yaml
+hardware:
+  calibration_file: "/etc/ai-acoustic-monitor/7175488.txt"
+```
+
 
 ## 📊 Prometheus & Grafana
 
-The app exposes real-time metrics on **port 8000** (Prometheus HTTP server). Metrics are updated every second via a max-hold buffer — short transient peaks between scrapes are never lost.
-
-### Metrics exposed
-
-| Metric | Description |
-|---|---|
-| `audio_dbspl` | Peak dBSPL since last scrape — **only published when a calibrated mic is connected** |
-| `audio_rms` | Peak RMS amplitude |
-| `audio_spectral_flux` | Spectral flux (change intensity) |
-| `ai_confidence` | Max AI classification confidence |
-| `audio_event_count_total{category}` | Cumulative event counter per policy category |
-| `system_cpu_usage` | CPU % |
-| `system_ram_usage` | RAM % |
-| `system_temp_celsius` | CPU temperature |
-| `system_disk_usage` | Disk % |
-| `system_disk_attached_usage` | Attached disk % |
-
-### Prometheus scrape config
+When `prometheus_enabled: true`, the app exposes real-time metrics on the configured port. Import `docs/grafana/ai-acoustic-monitor-dashboard.json` for a ready-made dashboard.
 
 Add to your `prometheus.yml`:
 
 ```yaml
 scrape_configs:
-  - job_name: edge-monitor
+  - job_name: ai-acoustic-monitor
     static_configs:
       - targets: ["<device-ip>:8000"]
+    scrape_interval: 5s
 ```
 
-### Grafana dashboard
+Key metrics: `audio_dbspl` (calibrated mic only), `audio_rms`, `audio_spectral_flux`, `ai_confidence`, `audio_event_count_total{category}`, `system_cpu_usage`, `system_temp_celsius`.
 
-Import `docs/grafana/edge-monitor-dashboard.json`:
 
-1. Grafana → **Dashboards** → **Import**
-2. Upload `edge-monitor-dashboard.json`
-3. Map `DS_PROMETHEUS` to your Prometheus datasource
-4. Click **Import**
+## 💓 Health Monitoring
 
-The dashboard includes three rows: 🎙️ Audio Acoustics, 🧠 AI Classification, 🖥️ System Health.
+- **GPIO heartbeat**: connect an LED to the configured pin — it blinks on every heartbeat interval
+- **healthchecks.io**: set `HC_PING_URL` in `.env` to get paged when the device goes silent
 
-## 🛠️ Development
+Both are configured in the `services:` block of your policy YAML and verified by `ai-acoustic-monitor --test`.
 
-```bash
-make lint        # Ruff linter
-make format      # Ruff autoformat
-make test        # pytest (unit tests)
-make test-e2e    # pytest (e2e tests, requires credentials)
-make coverage    # pytest with HTML coverage report
-make report      # Generate PDF analytics report from cloud metrics
-make list-devices  # Print available audio input devices
-```
 
-### Project structure
+## 📖 Further Reading
 
-```
-src/
-  app/
-    sinks/           # Real-time pipeline stages (AudioSink implementations)
-    services/        # Background workers and integrations
-    settings.py      # Pydantic settings + YAML policy loader
-    context.py       # PipelineContext (shared state bus)
-    main.py          # Entry point
-  scripts/           # Setup, report generation, ZMQ utilities
-tests/
-  sinks/
-  services/
-  e2e/
-```
-
-## 📋 Requirements
-
-- Python 3.11
-- `uv` — [install](https://github.com/astral-sh/uv)
-- `libportaudio2`, `libsndfile1` (installed by `make setup`)
-- **AI runtime**: `tflite-runtime` is included in the default install (`use_tflite: true`). Full TensorFlow is only needed for dev/SavedModel mode (`use_tflite: false`): `uv sync --extra full`
+- **Full configuration reference**: `ai-acoustic-monitor --manual`
+- **Architecture & internals**: [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Contributing / development setup**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Bug reports**: [GitHub Issues](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/issues)
