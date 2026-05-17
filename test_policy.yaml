@@ -1,6 +1,6 @@
 # test_policy.yaml
 #
-#  uv edge-monitor-run --config test_policy.yaml
+#  uv ai-acoustic-monitor-run --config test_policy.yaml
 
 # --- Global Variables ---
 # Define your constants here. They will be injected into the settings below.
@@ -27,6 +27,7 @@ services:
   recording_output_path: "recordings" 
   
   # Health Monitoring
+  heartbeat_enabled: false
   heartbeat_interval_seconds: 60
   gpio_heartbeat_pin: 17
   hc_ping_url: "{HC_PING_URL}"
@@ -45,15 +46,15 @@ services:
   # Cloud Provider Settings
   cloud:
     provider: "magalu"
-    bucket_name: "acoustic-logs"
+    bucket_name: "acoustic-monitor-policy-test"
 
 # --- AI Model Configuration ---
 feature_extractor:
-  use_tflite: false 
+  use_tflite: true
 
   sad_threshold_rms: 0.002
   sad_threshold_flux: 5.0
-  sad_threshold_dbspl: 45.0
+  sad_threshold_dbspl: 55.0
 
 # --- Reporting & Analysis Configuration ---
 reporting:
@@ -98,8 +99,9 @@ policies:
   - name: "TEST: Physics Trigger"
     description: "Snap/Tap for physics trigger."
     # Pure physics (no AI dependency) is the most reliable fallback.
-    condition: "metrics['flux'] > 10.0 or metrics['dbspl'] > 50.0"
+    condition: "metrics['flux'] > 25.0 and metrics['dbspl'] > 58.0"
     actions: 
       - "record_evidence"
+      - "telegram_alert"
       - "cloud_upload"
     ignore_privacy: true
