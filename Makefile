@@ -181,7 +181,7 @@ build-deb: clean-deb vendor ## Build the ai-acoustic-monitor .deb package
 
 test-deb: ## Test .deb in a clean Docker container (DISTRO=bookworm|noble)
 	@printf "%s\n" "🧪 Testing package in Docker (debian/ubuntu:$(DISTRO))..."
-	@docker run --rm -v $$(pwd):/dist debian:$(DISTRO) sh -c "\
+	@docker run --rm --network=host -v $$(pwd):/dist debian:$(DISTRO) sh -c "\
 		export DEBIAN_FRONTEND=noninteractive && \
 		apt-get update -qq && \
 		apt-get install -y /dist/deb_dist/*.deb && \

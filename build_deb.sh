@@ -11,7 +11,7 @@ echo "Generating Debian source tree..."
 uv run python3 setup.py --command-packages=stdeb.command sdist_dsc
 
 echo "Patching Debian dependencies..."
-cd deb_dist/edge-ai-acoustic-monitoring-app-*/
+cd deb_dist/ai-acoustic-monitoring-app-*/
 
 # Python 3.12 removed distutils; ensure setuptools is available at build time
 sed -i 's/^Build-Depends:.*/Build-Depends: debhelper (>= 9), dh-python, python3-all, python3-setuptools/' debian/control
