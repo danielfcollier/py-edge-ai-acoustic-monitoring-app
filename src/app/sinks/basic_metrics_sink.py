@@ -42,8 +42,7 @@ class BasicMetricsSink(AudioSink):
         # 3. Precision physics (only when mic is calibrated)
         if ctx.can_calculate_dbspl():
             dbfs = AudioMetrics.dBFS(ctx.audio)
-            dbspl = AudioMetrics.dBSPL(dbfs, ctx.sensitivity_dbfs, ctx.reference_dbspl)
-            self._context.metrics["dbspl"] = dbspl
+            self._context.metrics["dbspl"] = dbfs + ctx.reference_dbspl
 
         # 4. Prometheus — omit dBSPL when mic is uncalibrated
         dbspl = self._context.metrics["dbspl"]

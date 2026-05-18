@@ -75,18 +75,28 @@ class PrometheusService:
         # --- Background Reset Thread ---
         self._stop_event = threading.Event()
         self._reset_interval = PROMETHEUS_RESET_INTERVAL
+        self._started = False
 
     def start(self, port=PORT_PROMETHEUS_SERVER):
         """
         Starts the Prometheus HTTP server and the sync loop.
+        Idempotent — safe to call multiple times; only the first call has effect.
         :param port: The HTTP port to expose metrics on.
         """
+        if self._started:
+            return
+        self._started = True
         try:
             start_http_server(port)
-            threading.Thread(target=self._syncer_loop, daemon=True).start()
             logger.info(f"📊 Metrics Service (Max-Hold) started on port {port}")
-        except Exception as e:
-            logger.error(f"❌ Failed to start metrics server: {e}")
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                logger.warning(
+                    f"⚠️ Prometheus port {port} already in use — skipping HTTP server (metrics still collected)"
+                )
+            else:
+                logger.warning(f"⚠️ Could not start metrics server: {e}")
+        threading.Thread(target=self._syncer_loop, daemon=True).start()
 
     def update_audio(self, rms: float, flux: float, dbspl: float | None = None):
         """

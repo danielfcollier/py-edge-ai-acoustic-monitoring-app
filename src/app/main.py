@@ -19,6 +19,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import warnings
 
 from umik_base_app import AppArgs, AudioBaseApp, AudioPipeline
+from umik_base_app.core.operational_mode import OperationalMode
 
 from .calibration import setup_calibration
 from .context import PipelineContext
@@ -76,7 +77,7 @@ def main():
     args, unknown = parse_cli_args()
 
     if args.help:
-        print("Usage: edge-monitor [--config PATH] [--env PATH] [Base App Args...]")
+        print("Usage: ai-acoustic-monitor-run [--config PATH] [--env PATH] [Base App Args...]")
         print("Base App Args: --run-mode {monolithic,producer,consumer} --zmq-host ...")
         sys.exit(0)
 
@@ -85,7 +86,9 @@ def main():
 
     settings.load_policy_file(args.config)
 
-    PrometheusService().start()
+    svc_cfg = settings.CONFIG.services
+    if svc_cfg.prometheus_enabled:
+        PrometheusService().start(port=svc_cfg.prometheus_port)
 
     ensure_models_present()
 
@@ -105,7 +108,7 @@ def main():
         output_path.mkdir(parents=True, exist_ok=True)
 
     # Initialization
-    logger.info(f"🚀 Initializing in [{app_config.run_mode.upper()}] mode")
+    logger.info(f"🚀 Initializing in [{app_config.run_mode.value.upper()}] mode")
 
     # Services Layer
     services = []
@@ -115,18 +118,21 @@ def main():
     services.append(health_monitor)
 
     # Service: System Heartbeat (CSV Logger)
-    system_heartbeat = SystemHeartbeatService()
-    system_heartbeat.start()
-    services.append(system_heartbeat)
+    if settings.CONFIG.services.heartbeat_enabled:
+        system_heartbeat = SystemHeartbeatService()
+        system_heartbeat.start()
+        services.append(system_heartbeat)
+
+    _consumer_modes = (OperationalMode.MONOLITHIC, OperationalMode.CONSUMER)
 
     # Service: Recorder Transformer (FIR calibration, cold path)
-    if app_config.run_mode in ["monolithic", "consumer"]:
+    if app_config.run_mode in _consumer_modes:
         transformer = RecorderTransformerWorker(raw_queue=raw_queue, upload_queue=upload_queue)
         transformer.start()
         services.append(transformer)
 
     # Service: Cloud Upload (Consumer)
-    if app_config.run_mode in ["monolithic", "consumer"]:
+    if app_config.run_mode in _consumer_modes:
         uploader = CloudUploaderService(upload_queue=upload_queue, output_path=output_path)
         uploader.start()
         services.append(uploader)
@@ -143,7 +149,7 @@ def main():
     telegram_cmds.start()
     services.append(telegram_cmds)
 
-    pipeline = AudioPipeline()
+    pipeline = AudioPipeline(sample_rate=app_config.sample_rate)
 
     pipeline.add_sink(BasicMetricsSink(context))
     pipeline.add_sink(SADGatewaySink(context))
