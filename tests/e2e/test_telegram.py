@@ -50,7 +50,7 @@ def _capture_reply(receiver):
 def test_send_message_returns_true(require_telegram):
     """TelegramBotClient.send_message_sync succeeds against the live API."""
     client = TelegramBotClient()
-    result = client.send_message_sync("🧪 [E2E] edge-monitor connectivity check — ignore")
+    result = client.send_message_sync("🧪 [E2E] ai-acoustic-monitor connectivity check — ignore")
     assert result is True
 
 

@@ -20,6 +20,8 @@ def _make_settings(tmp_path, post_roll=2):
     svc.metrics_csv_buffer_file = "metrics_buffer.csv"
     svc.recording_max_seconds = 60
     svc.recording_post_roll_seconds = post_roll
+    svc.recording_pre_roll_seconds = 5
+    m.CONFIG.feature_extractor.inference_interval_ms = 975
     return m
 
 

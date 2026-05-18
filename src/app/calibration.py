@@ -33,9 +33,10 @@ def setup_calibration(base_args: argparse.Namespace) -> AppConfig:
     # This detects hardware and loads the calibration file values into 'app_config'
     app_config = AppArgs.validate_args(base_args)
 
-    if hasattr(app_config, "sensitivity_dbfs") and app_config.sensitivity_dbfs is not None:
-        logger.info(f"🔧 Syncing calibration to global settings: {app_config.sensitivity_dbfs:.2f} dB")
-        settings.HARDWARE.NOMINAL_SENSITIVITY_DBFS = app_config.sensitivity_dbfs
-        settings.HARDWARE.REFERENCE_DBSPL = app_config.reference_dbspl
+    if app_config.calibration is not None:
+        cal = app_config.calibration
+        logger.info(f"🔧 Syncing calibration to global settings: {cal.sensitivity_dbfs:.2f} dB")
+        settings.HARDWARE.NOMINAL_SENSITIVITY_DBFS = cal.sensitivity_dbfs
+        settings.HARDWARE.REFERENCE_DBSPL = cal.reference_dbspl
 
     return app_config
