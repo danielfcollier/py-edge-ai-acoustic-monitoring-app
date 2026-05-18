@@ -172,6 +172,7 @@ class ServiceConfig(BaseModel):
     # Queue / Pipeline
     max_pending_uploads: int = 50
     recording_max_seconds: int = 60
+    recording_pre_roll_seconds: int = 5
     recording_post_roll_seconds: int = 10
     metrics_csv_buffer_file: str = "metrics_buffer.csv"
     dbspl_silence_level: float = 30.0  # Prometheus floor when mic is uncalibrated
@@ -179,6 +180,7 @@ class ServiceConfig(BaseModel):
     # Operational Settings
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
+    heartbeat_enabled: bool = True
     heartbeat_interval_seconds: int = 60
     alert_cooldown_seconds: int = 60
 
@@ -189,6 +191,10 @@ class ServiceConfig(BaseModel):
     # Hardware / Health
     gpio_heartbeat_pin: int = 17
     hc_ping_url: str | None = None
+
+    # Prometheus metrics server
+    prometheus_enabled: bool = True
+    prometheus_port: int = 8000
 
 
 class HardwareConfig(BaseModel):

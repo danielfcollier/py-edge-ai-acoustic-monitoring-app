@@ -42,12 +42,19 @@ class SmartBufferSink(AudioSink):
         self._max_duration_sec = self._config.recording_max_seconds
         self._post_roll_sec = self._config.recording_post_roll_seconds
 
+        # Compute how many pre-roll chunks = pre_roll_seconds / inference_interval
+        inference_ms = settings.CONFIG.feature_extractor.inference_interval_ms
+        pre_roll_sec = self._config.recording_pre_roll_seconds
+        self._pre_roll_chunks = max(1, round(pre_roll_sec * 1000 / inference_ms))
+
         # State Machine
         self._is_recording = False
         self._event_id = None
         self._start_time = 0.0
         self._fade_start_time = 0.0
         self._audio_buffer = []
+        self._peak_label = "unknown"
+        self._peak_confidence = 0.0
 
         self._init_csv()
         logger.info(f"💾 Smart Buffer Ready. Output: {self._output_dir}")
@@ -111,7 +118,10 @@ class SmartBufferSink(AudioSink):
         self._start_time = now
         self._fade_start_time = 0.0
         self._is_recording = True
-        self._audio_buffer = list(self._context.audio_pre_buffer)
+        self._peak_label = self._context.current_event_label or "unknown"
+        self._peak_confidence = self._context.current_confidence or 0.0
+        pre_buffer = list(self._context.audio_pre_buffer)
+        self._audio_buffer = pre_buffer[-self._pre_roll_chunks :]
         logger.info(f"🔴 Recording Started [ID: {self._event_id[:8]}]")
 
     def _process_chunk(self, chunk: np.ndarray, now: float):
@@ -120,6 +130,10 @@ class SmartBufferSink(AudioSink):
         metrics = self._context.metrics
         label = self._context.current_event_label
         conf = self._context.current_confidence
+
+        if conf and conf > self._peak_confidence:
+            self._peak_confidence = conf
+            self._peak_label = label or self._peak_label
         cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
 
         self._write_csv(
@@ -167,8 +181,8 @@ class SmartBufferSink(AudioSink):
             "sample_rate": self._sample_rate,
             "audio_data": full_audio,
             "metadata": {
-                "label": self._context.current_event_label,
-                "confidence": self._context.current_confidence,
+                "label": self._peak_label,
+                "confidence": self._peak_confidence,
                 "calibrated": False,
             },
         }
@@ -182,3 +196,6 @@ class SmartBufferSink(AudioSink):
         self._is_recording = False
         self._audio_buffer = []
         self._event_id = None
+        self._peak_label = "unknown"
+        self._peak_confidence = 0.0
+        self._context.audio_pre_buffer.clear()
