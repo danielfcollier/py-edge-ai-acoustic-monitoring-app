@@ -5,6 +5,6 @@ scrape_configs:
   - job_name: 'ai-acoustic-monitor'
     static_configs:
       # If app is on host machine (outside docker):
-      - targets: ['host.docker.internal:9090'] 
+      - targets: ['host.docker.internal:8000']
       # OR if app is on a specific IP (e.g. Raspberry Pi):
-      # - targets: ['192.168.1.100:9090']
+      # - targets: ['192.168.1.100:8000']
