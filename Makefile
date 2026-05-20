@@ -109,6 +109,25 @@ report: ## Generate PDF report from cloud metrics.
 	@PYTHONPATH=$(BASE_DIR) $(PYTHON) $(SCRIPTS_DIR)/generate_report.py
 	@echo -e "$(GREEN)>>> Report saved to reports/report.pdf$(NC)"
 
+# --- Cloud Bucket Utilities ---
+# Default bucket from .env; override on the command line: make bucket-download BUCKET=my-bucket
+AUDIO_BUCKET ?= $(shell grep '^MAGALU_BUCKET=' .env 2>/dev/null | cut -d= -f2 | tr -d '"')
+
+.PHONY: bucket-download bucket-clean
+
+bucket-download: ## Download all objects from the bucket to ./downloads (override: BUCKET=name DEST=path)
+	$(eval _BUCKET := $(or $(BUCKET),$(AUDIO_BUCKET)))
+	@if [ -z "$(_BUCKET)" ]; then echo -e "$(RED)Error: set MAGALU_BUCKET in .env or pass BUCKET=name$(NC)"; exit 1; fi
+	$(eval _DEST   := $(or $(DEST),downloads))
+	@echo -e "$(GREEN)>>> Downloading s3://$(_BUCKET) → $(_DEST)/$(NC)"
+	@PYTHONPATH=$(BASE_DIR) $(PYTHON) $(SCRIPTS_DIR)/bucket_ops.py download --bucket $(_BUCKET) --dest $(_DEST)
+
+bucket-clean: ## Delete ALL objects from the bucket (override: BUCKET=name). Prompts for confirmation.
+	$(eval _BUCKET := $(or $(BUCKET),$(AUDIO_BUCKET)))
+	@if [ -z "$(_BUCKET)" ]; then echo -e "$(RED)Error: set MAGALU_BUCKET in .env or pass BUCKET=name$(NC)"; exit 1; fi
+	@printf "$(YELLOW)⚠️  Delete ALL objects from s3://$(_BUCKET)? [y/N] $(NC)" && read ans && [ "$$ans" = "y" ] || { echo "Aborted."; exit 0; }
+	@PYTHONPATH=$(BASE_DIR) $(PYTHON) $(SCRIPTS_DIR)/bucket_ops.py clean --bucket $(_BUCKET)
+
 # --- Hardware Utilities (Pi) ---
 
 .PHONY: fan-test list-devices
@@ -190,14 +209,16 @@ test-deb: ## Test .deb in a clean Docker container (DISTRO=bookworm|noble)
 		printf '\n--- Service templates ---\n' && \
 		ls -l /usr/lib/ai-acoustic-monitor/setup/"
 
-publish-deb: ## Publish built .deb to S3 APT repository (reads .env for credentials)
-	@if [ -z "$(BUCKET)" ]; then \
-		printf "%s\n" "Error: BUCKET=... required. Usage: make publish-deb BUCKET=ai-acoustic-monitor"; \
+publish-deb: ## Publish built .deb to S3 APT repository (bucket from .env DEB_S3_BUCKET, or BUCKET=…)
+	$(eval _BUCKET := $(or $(BUCKET),$(DEB_BUCKET)))
+	@if [ -z "$(_BUCKET)" ]; then \
+		printf "%s\n" "Error: bucket not set. Add to .env: DEB_S3_BUCKET=your-bucket"; \
+		printf "%s\n" "  or pass: make publish-deb BUCKET=your-bucket"; \
 		exit 1; \
 	fi
 	@set -a && . ./.env && set +a && \
 	$(UV) run --group publish python publish_repo.py \
-		"$$(find deb_dist -name '*.deb' -type f | head -1)" $(BUCKET)
+		"$$(find deb_dist -name '*.deb' -type f | head -1)" $(_BUCKET)
 
 release: ## Bump version, build .deb, publish to MGC (VERSION_BUMP=patch|minor|major)
 	@if [ -z "$(DEB_BUCKET)" ]; then \
