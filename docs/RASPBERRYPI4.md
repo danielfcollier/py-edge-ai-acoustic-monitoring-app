@@ -1,6 +1,6 @@
 # Raspberry Pi 4B — Field Guide
 
-Practical reference for deploying and operating the Edge Acoustic Monitor on a Raspberry Pi 4B.
+Practical reference for deploying and operating the AI Acoustic Monitor on a Raspberry Pi 4B.
 Assumes Raspberry Pi OS Bookworm (64-bit, headless) or Ubuntu Server 24.04.
 
 ## Table of Contents

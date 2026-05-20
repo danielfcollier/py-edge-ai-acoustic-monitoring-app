@@ -458,17 +458,21 @@ def _test_profile(config_path: str) -> bool:
     return True
 
 
-def _test_calibration(config_path: str) -> bool:
+def _test_calibration(config_path: str) -> bool | None:
     """Check the calibration file exists and is readable."""
     raw = _read_yaml(config_path)
     calib = raw.get("hardware", {}).get("calibration_file")
     if not calib:
         _row(_SKIP, "Calibration file", "not configured (uncalibrated mode)")
-        return True
-    # Unresolved YAML variable reference — skip; the app loader resolves these at runtime
+        return None
+    # Resolve a single YAML variable reference e.g. "{calibration_file_path}"
     if calib.startswith("{") and calib.endswith("}"):
-        _row(_SKIP, "Calibration file", f"variable ref {calib} (resolved at runtime)")
-        return True
+        var_name = calib[1:-1]
+        resolved = raw.get("variables", {}).get(var_name)
+        if not resolved:
+            _row(_SKIP, "Calibration file", f"{calib} — variable not defined in YAML")
+            return None
+        calib = str(resolved)
     p = Path(calib)
     if p.is_file():
         size_kb = p.stat().st_size // 1024
@@ -478,13 +482,13 @@ def _test_calibration(config_path: str) -> bool:
     return False
 
 
-def _test_microphone(config_path: str) -> bool:
+def _test_microphone(config_path: str) -> bool | None:
     """Enumerate audio devices, verify the expected device is accessible."""
     try:
         import sounddevice as sd  # noqa: PLC0415
     except ImportError:
         _row(_WARN, "Microphone", "sounddevice not available (skipped)")
-        return True
+        return None
 
     try:
         devices = sd.query_devices()
@@ -498,13 +502,13 @@ def _test_microphone(config_path: str) -> bool:
         return False
 
 
-def _test_recording(config_path: str) -> bool:
+def _test_recording(config_path: str) -> bool | None:
     """Record 1 second of audio and verify non-empty output."""
     try:
         import sounddevice as sd  # noqa: PLC0415
     except ImportError:
         _row(_SKIP, "Sample recording", "sounddevice/numpy not available")
-        return True
+        return None
 
     try:
         _read_yaml(config_path)
@@ -529,7 +533,7 @@ def _test_recording(config_path: str) -> bool:
         return False
 
 
-def _test_telegram(env_path: str) -> bool:
+def _test_telegram(env_path: str) -> bool | None:
     """Send a test message via the Telegram bot API."""
     env = _read_env(env_path)
     token = env.get("TELEGRAM_TOKEN", "")
@@ -537,7 +541,7 @@ def _test_telegram(env_path: str) -> bool:
 
     if not token or not chat_id:
         _row(_SKIP, "Telegram", "credentials not configured")
-        return True
+        return None
 
     try:
         import asyncio  # noqa: PLC0415
@@ -556,13 +560,13 @@ def _test_telegram(env_path: str) -> bool:
         return False
 
 
-def _test_cloud(env_path: str, config_path: str) -> bool:
+def _test_cloud(env_path: str, config_path: str) -> bool | None:
     """Upload and delete a tiny test file to verify cloud credentials and bucket access."""
     raw = _read_yaml(config_path)
     svc = raw.get("services", {})
     if not svc.get("cloud_storage_enabled", True) or not svc.get("internet_enabled", True):
         _row(_SKIP, "Cloud storage", "disabled in config")
-        return True
+        return None
 
     cloud_cfg = svc.get("cloud", {})
     provider = cloud_cfg.get("provider", "magalu")
@@ -571,7 +575,7 @@ def _test_cloud(env_path: str, config_path: str) -> bool:
 
     if not bucket:
         _row(_SKIP, "Cloud storage", "bucket_name not set")
-        return True
+        return None
 
     test_key = "ai-acoustic-monitor-test/.connection-test"
     test_data = b"ai-acoustic-monitor connection test"
@@ -579,6 +583,7 @@ def _test_cloud(env_path: str, config_path: str) -> bool:
     try:
         if provider in ("magalu", "aws"):
             import boto3  # noqa: PLC0415
+            from botocore.exceptions import ClientError  # noqa: PLC0415
 
             if provider == "magalu":
                 region = cloud_cfg.get("region", "br-se1")
@@ -591,40 +596,66 @@ def _test_cloud(env_path: str, config_path: str) -> bool:
                 )
                 label = f"Magalu {region}"
             else:
+                region = env.get("AWS_REGION", "us-east-1")
                 s3 = boto3.client(
                     "s3",
                     aws_access_key_id=env.get("AWS_ACCESS_KEY_ID"),
                     aws_secret_access_key=env.get("AWS_SECRET_ACCESS_KEY"),
-                    region_name=env.get("AWS_REGION", "us-east-1"),
+                    region_name=region,
                 )
-                label = f"AWS {env.get('AWS_REGION', 'us-east-1')}"
+                label = f"AWS {region}"
 
-            s3.put_object(Bucket=bucket, Key=test_key, Body=test_data)
+            bucket_created = False
+            try:
+                s3.put_object(Bucket=bucket, Key=test_key, Body=test_data)
+            except ClientError as e:
+                if e.response["Error"]["Code"] in ("NoSuchBucket", "404"):
+                    s3.create_bucket(Bucket=bucket)
+                    bucket_created = True
+                    s3.put_object(Bucket=bucket, Key=test_key, Body=test_data)
+                else:
+                    raise
             s3.delete_object(Bucket=bucket, Key=test_key)
-            _row(_PASS, "Cloud storage", f"{label} bucket '{bucket}' OK")
+            if bucket_created:
+                s3.delete_bucket(Bucket=bucket)
+                _row(_PASS, "Cloud storage", f"{label} bucket '{bucket}' created, tested, removed")
+            else:
+                _row(_PASS, "Cloud storage", f"{label} bucket '{bucket}' OK")
             return True
 
         elif provider == "gcp":
             from google.cloud import storage as gcs  # noqa: PLC0415
+            from google.api_core.exceptions import NotFound  # noqa: PLC0415
 
             creds_path = cloud_cfg.get("gcp_credentials_path") or env.get("GOOGLE_APPLICATION_CREDENTIALS")
             client = gcs.Client() if not creds_path else gcs.Client.from_service_account_json(creds_path)
-            blob = client.bucket(bucket).blob(test_key)
-            blob.upload_from_string(test_data)
+            gcs_bucket = client.bucket(bucket)
+            blob = gcs_bucket.blob(test_key)
+            bucket_created = False
+            try:
+                blob.upload_from_string(test_data)
+            except NotFound:
+                client.create_bucket(gcs_bucket)
+                bucket_created = True
+                blob.upload_from_string(test_data)
             blob.delete()
-            _row(_PASS, "Cloud storage", f"GCP bucket '{bucket}' OK")
+            if bucket_created:
+                gcs_bucket.delete()
+                _row(_PASS, "Cloud storage", f"GCP bucket '{bucket}' created, tested, removed")
+            else:
+                _row(_PASS, "Cloud storage", f"GCP bucket '{bucket}' OK")
             return True
 
         else:
             _row(_WARN, "Cloud storage", f"unknown provider: {provider}")
-            return True
+            return None
 
     except Exception as exc:
         _row(_FAIL, "Cloud storage", str(exc))
         return False
 
 
-def _test_heartbeat(env_path: str, config_path: str) -> bool:
+def _test_heartbeat(env_path: str, config_path: str) -> bool | None:
     """Ping the healthchecks.io URL if configured."""
     raw = _read_yaml(config_path)
     svc = raw.get("services", {})
@@ -634,7 +665,7 @@ def _test_heartbeat(env_path: str, config_path: str) -> bool:
     hc_url = svc.get("hc_ping_url", "") or env.get("HC_PING_URL", "")
     if not hc_url or hc_url.startswith("{") or "your-uuid" in hc_url:
         _row(_SKIP, "Heartbeat (HC ping)", "HC_PING_URL not configured")
-        return True
+        return None
 
     try:
         with urllib.request.urlopen(hc_url, timeout=10) as resp:
@@ -642,29 +673,6 @@ def _test_heartbeat(env_path: str, config_path: str) -> bool:
         return True
     except Exception as exc:
         _row(_FAIL, "Heartbeat (HC ping)", str(exc))
-        return False
-
-
-def _test_prometheus(config_path: str) -> bool:
-    """Check whether the Prometheus metrics server is reachable."""
-    raw = _read_yaml(config_path)
-    svc = raw.get("services", {})
-
-    if not svc.get("prometheus_enabled", True):
-        _row(_SKIP, "Prometheus", "disabled in config")
-        return True
-
-    port = svc.get("prometheus_port", 8000)
-    url = f"http://localhost:{port}/metrics"
-    try:
-        with urllib.request.urlopen(url, timeout=3) as resp:
-            _row(_PASS, "Prometheus", f"HTTP {resp.status} on localhost:{port}/metrics")
-        return True
-    except urllib.error.URLError:
-        _row(_WARN, "Prometheus", f"not reachable on :{port} (start ai-acoustic-monitor-run first)")
-        return True  # warning, not failure — app may not be running yet
-    except Exception as exc:
-        _row(_FAIL, "Prometheus", str(exc))
         return False
 
 
@@ -681,7 +689,7 @@ def cmd_test(config_path: str, env_path: str) -> None:
     _hr("═")
     print()
 
-    results: list[bool] = []
+    results: list[bool | None] = []
     results.append(_test_profile(config_path))
     results.append(_test_calibration(config_path))
     results.append(_test_microphone(config_path))
@@ -689,21 +697,25 @@ def cmd_test(config_path: str, env_path: str) -> None:
     results.append(_test_telegram(env_path))
     results.append(_test_cloud(env_path, config_path))
     results.append(_test_heartbeat(env_path, config_path))
-    results.append(_test_prometheus(config_path))
+
+    passed  = sum(1 for r in results if r is True)
+    skipped = sum(1 for r in results if r is None)
+    failed  = sum(1 for r in results if r is False)
 
     print()
     _hr()
-    total = len(results)
-    passed = sum(results)
-    if passed == total:
-        print(f"  {_c(f'All {total} checks passed.', _GREEN)}")
-    else:
-        failed = total - passed
-        print(f"  {_c(f'{passed}/{total} passed', _GREEN)}  {_c(f'{failed} failed', _RED)}")
+    parts = []
+    if passed:
+        parts.append(_c(f"{passed} passed", _GREEN))
+    if skipped:
+        parts.append(_c(f"{skipped} skipped", _DIM))
+    if failed:
+        parts.append(_c(f"{failed} failed", _RED))
+    print(f"  {'  '.join(parts)}")
     _hr()
     print()
 
-    if not all(results):
+    if failed:
         sys.exit(1)
 
 
@@ -746,8 +758,15 @@ def _main_menu(config_path: str, env_path: str) -> None:
     print("  3. Install service        (--install)")
     print("  4. Validate services      (--test)")
     print("  5. View user manual       (--manual)")
+    print("  6. Run monitor            (ai-acoustic-monitor-run)")
     print("  Q. Quit")
     print()
+
+    def _cmd_run():
+        import shlex  # noqa: PLC0415
+        cmd = ["ai-acoustic-monitor-run", "--config", config_path, "--env", env_path]
+        print(f"\n  Running: {shlex.join(cmd)}\n")
+        os.execvp(cmd[0], cmd)
 
     dispatch = {
         "1": lambda: cmd_credentials(env_path),
@@ -755,6 +774,7 @@ def _main_menu(config_path: str, env_path: str) -> None:
         "3": lambda: cmd_install(None, config_path, env_path),
         "4": lambda: cmd_test(config_path, env_path),
         "5": cmd_manual,
+        "6": _cmd_run,
     }
     while True:
         choice = _prompt("Enter choice").lower()
@@ -764,7 +784,7 @@ def _main_menu(config_path: str, env_path: str) -> None:
         elif choice in ("q", "quit", "exit", ""):
             sys.exit(0)
         else:
-            print("  Enter 1–5 or Q.")
+            print("  Enter 1–6 or Q.")
 
 
 # ---------------------------------------------------------------------------
@@ -773,7 +793,7 @@ def _main_menu(config_path: str, env_path: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ai-acoustic-monitor",
-        description="Edge Acoustic Monitor — setup and management",
+        description="AI Acoustic Monitor — setup and management",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -784,8 +804,23 @@ def main() -> None:
             "  sudo ai-acoustic-monitor --install distributed   install producer+consumer\n"
             "  ai-acoustic-monitor --test                       validate all services\n"
             "  ai-acoustic-monitor --manual                     view user manual\n"
+            "  ai-acoustic-monitor --run                        start the monitor\n"
+            "\n"
+            "File locations:\n"
+            "  --configure credentials  writes  ~/.config/ai-acoustic-monitor/.env\n"
+            "  --configure              writes  ./security_policy.yaml (current directory)\n"
+            "  --install                copies  both to /etc/ai-acoustic-monitor/ for the systemd service\n"
+            "                           also copies calibration file to /etc/ai-acoustic-monitor/\n"
+            "  After changing wizard config, re-run: sudo ai-acoustic-monitor --install\n"
         ),
     )
+    try:
+        from importlib.metadata import version as _pkg_version  # noqa: PLC0415
+        _version = _pkg_version("ai-acoustic-monitoring-app")
+    except Exception:
+        _version = "unknown"
+    parser.add_argument("--version", action="version", version=f"ai-acoustic-monitor {_version}")
+
     parser.add_argument(
         "--config",
         default="security_policy.yaml",
@@ -822,6 +857,11 @@ def main() -> None:
         action="store_true",
         help="View user manual in pager.",
     )
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="Start the monitor (delegates to ai-acoustic-monitor-run).",
+    )
 
     args = parser.parse_args()
 
@@ -835,6 +875,11 @@ def main() -> None:
         cmd_install(args.install, args.config, args.env)
     elif args.test:
         cmd_test(args.config, args.env)
+    elif args.run:
+        import shlex  # noqa: PLC0415
+        cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env]
+        print(f"Running: {shlex.join(cmd)}")
+        os.execvp(cmd[0], cmd)
     else:
         _main_menu(args.config, args.env)
 

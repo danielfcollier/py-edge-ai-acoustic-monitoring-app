@@ -4,6 +4,8 @@
 Generates a fully compliant Debian repository layout so clients can use:
     apt update && apt install ai-acoustic-monitor
 
+After publishing, old versions are pruned automatically (default: keep 2 latest).
+
 GPG Key Setup (one-time):
     1. Generate:  gpg --full-generate-key    (RSA 4096, no passphrase for CI)
     2. Export public:  gpg --armor --export <KEY_ID> > ai-acoustic-monitor.gpg.pub
@@ -13,7 +15,10 @@ GPG Key Setup (one-time):
                   export GPG_PUBKEY_FILE=/path/to/ai-acoustic-monitor.gpg.pub
 
 Usage:
-    uv run --group publish python publish_repo.py <path-to-deb> <s3-bucket>
+    uv run --group publish python publish_repo.py <path-to-deb> <s3-bucket> [--keep N]
+
+Options:
+    --keep N    Number of latest versions to retain in the pool (default: 2)
 
 Environment Variables:
     S3_ENDPOINT             S3-compatible endpoint (default: Magalu Cloud br-se1)
@@ -368,15 +373,109 @@ def export_public_key(gpg_key_id: str, pubkey_file: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Version Pruning
+# ---------------------------------------------------------------------------
+def list_pool_versions(s3_client, bucket: str, prefix: str, config: dict[str, str], package: str, arch: str) -> list[tuple]:
+    """Return (Version, s3_key) tuples for all pool .deb files, sorted newest first."""
+    from debian.debian_support import Version  # noqa: PLC0415
+
+    component = config["component"]
+    pool_prefix = prefixed_key(prefix, f"pool/{component}/{package[0].lower()}/{package}/")
+
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=pool_prefix)
+    deb_keys = [obj["Key"] for obj in response.get("Contents", []) if obj["Key"].endswith(".deb")]
+
+    versioned = []
+    for key in deb_keys:
+        filename = key.split("/")[-1]
+        inner = filename[len(package) + 1:]           # strip "ai-acoustic-monitor_"
+        ver_str = inner.rsplit(f"_{arch}.deb", 1)[0]  # strip "_amd64.deb"
+        try:
+            versioned.append((Version(ver_str), key))
+        except Exception:
+            print(f"  Warning: could not parse version from {filename}, skipping.")
+
+    versioned.sort(reverse=True)
+    return versioned
+
+
+def prune_old_versions(s3_client, bucket: str, prefix: str, config: dict[str, str], package: str, arch: str, keep: int) -> None:
+    """Delete pool .deb files and index entries for all but the `keep` newest versions."""
+    print(f"\nPruning old versions of {package} (keeping {keep} latest)...")
+
+    versioned = list_pool_versions(s3_client, bucket, prefix, config, package, arch)
+
+    if not versioned:
+        print("  No .deb files found in pool.")
+        return
+
+    to_keep = versioned[:keep]
+    to_delete = versioned[keep:]
+
+    if not to_delete:
+        print(f"  {len(versioned)} version(s) present — nothing to prune.")
+        return
+
+    old_version_strs = {str(v) for v, _ in to_delete}
+    print(f"  Keeping:  {', '.join(str(v) for v, _ in to_keep)}")
+    print(f"  Removing: {', '.join(sorted(old_version_strs))}")
+
+    for _, key in to_delete:
+        s3_client.delete_object(Bucket=bucket, Key=key)
+        print(f"  Deleted pool: {key}")
+
+    component = config["component"]
+    for dist in config["dists"]:
+        packages_gz_key = prefixed_key(prefix, f"dists/{dist}/{component}/binary-{arch}/Packages.gz")
+        existing = download_existing_packages(s3_client, bucket, packages_gz_key)
+
+        if not existing.strip():
+            continue
+
+        stanzas = [b.strip() for b in existing.strip().split("\n\n") if b.strip()]
+        kept_stanzas, removed = [], 0
+        for block in stanzas:
+            parsed = Deb822(block)
+            if parsed.get("Package") == package and parsed.get("Version") in old_version_strs:
+                removed += 1
+            else:
+                kept_stanzas.append(block)
+
+        if removed == 0:
+            continue
+
+        packages_text = "\n\n".join(kept_stanzas) + "\n" if kept_stanzas else ""
+        packages_gz_bytes = compress_packages(packages_text)
+
+        dist_config = {**config, "dist": dist}
+        release_text = build_release(packages_text, packages_gz_bytes, dist_config, arch)
+        inrelease_text, release_gpg_text = sign_release(release_text, config["gpg_key_id"], config["gpg_key_file"])
+
+        packages_key = prefixed_key(prefix, f"dists/{dist}/{component}/binary-{arch}/Packages")
+        upload_text(s3_client, bucket, packages_key, packages_text)
+        upload_bytes(s3_client, bucket, packages_gz_key, packages_gz_bytes, "application/gzip")
+        upload_text(s3_client, bucket, prefixed_key(prefix, f"dists/{dist}/Release"), release_text)
+        upload_text(s3_client, bucket, prefixed_key(prefix, f"dists/{dist}/InRelease"), inrelease_text)
+        upload_text(s3_client, bucket, prefixed_key(prefix, f"dists/{dist}/Release.gpg"), release_gpg_text)
+        print(f"  Updated index for dist={dist}: removed {removed} stanza(s), re-signed.")
+
+    print("Pruning complete.")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <path-to-deb> <s3-bucket>", file=sys.stderr)
-        sys.exit(1)
+    import argparse as _ap  # noqa: PLC0415
 
-    deb_path = sys.argv[1]
-    bucket = sys.argv[2]
+    parser = _ap.ArgumentParser(description="Publish a .deb to an S3-compatible APT repository.")
+    parser.add_argument("deb_path", help="Path to the .deb file to publish")
+    parser.add_argument("bucket", help="S3 bucket name")
+    parser.add_argument("--keep", type=int, default=2, metavar="N", help="Number of latest versions to retain (default: 2)")
+    args = parser.parse_args()
+
+    deb_path = args.deb_path
+    bucket = args.bucket
 
     if not os.path.isfile(deb_path):
         print(f"Error: .deb file not found: {deb_path}", file=sys.stderr)
@@ -452,9 +551,12 @@ def main() -> None:
     print(f"\nDone! Published {package} {version} to s3://{bucket}/{prefix} (dists: {', '.join(dists)})")
     print("\nClient setup:")
     print(f"  curl -fsSL {base_url}/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/ai-acoustic-monitor.gpg")
-    print(f'  echo "deb [signed-by=/usr/share/keyrings/ai-acoustic-monitor.gpg] {base_url} <dist> {component}" | \\')
+    print(f'  echo "deb [signed-by=/usr/share/keyrings/ai-acoustic-monitor.gpg] {base_url} $(lsb_release -cs) {component}" | \\')
     print("    sudo tee /etc/apt/sources.list.d/ai-acoustic-monitor.list")
     print("  sudo apt-get update && sudo apt-get install ai-acoustic-monitor")
+    print(f"\n  (Supported distributions: {', '.join(dists)})")
+
+    prune_old_versions(s3_client, bucket, prefix, config, package, arch, keep=args.keep)
 
 
 if __name__ == "__main__":

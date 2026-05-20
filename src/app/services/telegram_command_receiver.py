@@ -152,7 +152,7 @@ class TelegramCommandReceiver:
             self._reply(f"Unknown subcommand '{sub}'. Use: on, off, status")
 
     def _handle_status(self) -> None:
-        lines = ["📊 Edge Monitor"]
+        lines = ["📊 AI Acoustic Monitor"]
 
         # Last detected event
         if self._context is not None:
