@@ -25,6 +25,7 @@ class S3Provider:
         import boto3
 
         self.bucket = bucket_name
+        self.region = region
         self.client = boto3.client(
             "s3",
             aws_access_key_id=access_key,
@@ -32,6 +33,27 @@ class S3Provider:
             region_name=region,
             endpoint_url=endpoint_url,
         )
+        self._ensure_bucket_exists()
+
+    def _ensure_bucket_exists(self):
+        try:
+            self.client.head_bucket(Bucket=self.bucket)
+        except Exception as e:
+            code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
+            if code in ("404", "NoSuchBucket"):
+                try:
+                    if self.region and self.region != "us-east-1":
+                        self.client.create_bucket(
+                            Bucket=self.bucket,
+                            CreateBucketConfiguration={"LocationConstraint": self.region},
+                        )
+                    else:
+                        self.client.create_bucket(Bucket=self.bucket)
+                    logger.info(f"✅ Created bucket: {self.bucket}")
+                except Exception as create_err:
+                    logger.error(f"❌ Failed to create bucket '{self.bucket}': {create_err}")
+            else:
+                logger.warning(f"⚠️ Could not verify bucket '{self.bucket}': {e}")
 
     def upload(self, file_path: Path, object_name: str) -> bool:
         try:
