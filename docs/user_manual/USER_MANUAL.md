@@ -1,10 +1,10 @@
-# 🎙️ Edge Acoustic Monitor — User Manual
+# 🎙️ AI Acoustic Monitor — User Manual
 
-This manual covers everything you need to configure, run, and operate the Edge Acoustic Monitor after the software is installed.
+This manual covers everything you need to configure, run, and operate the AI Acoustic Monitor after the software is installed.
 
 ## Table of Contents
 
-- [Edge Acoustic Monitor — User Manual](#edge-acoustic-monitor--user-manual)
+- [AI Acoustic Monitor — User Manual](#ai-acoustic-monitor--user-manual)
   - [Table of Contents](#table-of-contents)
   - [1. 🔐 Credentials — `.env` file](#1-credentials--env-file)
   - [2. 📋 Policy File — `security_policy.yaml`](#2-policy-file--security_policyyaml)
@@ -105,7 +105,7 @@ variables:
   night_start: 22       # 10:00 PM
   day_limit: 60.0       # dBSPL threshold for daytime rules
   night_limit: 50.0     # dBSPL threshold for night rules
-  calibration_file_path: "src/umik-1/7175488.txt"
+  calibration_file_path: "/etc/ai-acoustic-monitor/7175488.txt"
 ```
 
 Any variable you define here can be referenced as `{variable_name}` in any string value in the rest of the file. Environment variables (like `{HC_PING_URL}`) are also substituted automatically.
@@ -115,8 +115,8 @@ Any variable you define here can be referenced as `{variable_name}` in any strin
 
 ```yaml
 hardware:
-  calibration_file: "src/umik-1/7175488.txt"   # path to calibration file (omit for uncalibrated use)
-  fir_num_taps: 1024                            # FIR filter length (default: 1024)
+  calibration_file: "/etc/ai-acoustic-monitor/7175488.txt"   # path to calibration file (omit for uncalibrated use)
+  fir_num_taps: 1024                                         # FIR filter length (default: 1024)
 ```
 
 | Parameter | Type | Default | Description |
@@ -382,6 +382,19 @@ reporting:
 
 ## 3. Running the App 🚀
 
+### File locations
+
+The wizard and installer write files to different locations depending on the step:
+
+| Step | File | Location |
+|---|---|---|
+| `ai-acoustic-monitor --configure credentials` | Credentials | `~/.config/ai-acoustic-monitor/.env` |
+| `ai-acoustic-monitor --configure` | Policy YAML | `./security_policy.yaml` (current directory) |
+| `sudo ai-acoustic-monitor --install` | Copies both to | `/etc/ai-acoustic-monitor/` |
+| `sudo ai-acoustic-monitor --install` (with calibration) | Calibration file | `/etc/ai-acoustic-monitor/<filename>.txt` |
+
+The systemd service always reads from `/etc/ai-acoustic-monitor/`. The `~/.config` directory is only used by the wizard. If you change your policy or credentials with the wizard after installation, re-run `sudo ai-acoustic-monitor --install` to copy the updated files to `/etc/ai-acoustic-monitor/`.
+
 ```bash
 # Run the monitor (config and credentials installed by the wizard)
 ai-acoustic-monitor-run \
@@ -423,7 +436,7 @@ For most deployments, use the default `monolithic` mode.
 2026-05-13 10:00:00 [INFO] 🚀 Initializing in [MONOLITHIC] mode
 2026-05-13 10:00:00 [INFO] 📱 Telegram Command Receiver started.
 2026-05-13 10:00:00 [INFO] 🧠 Policy Engine Initialized. Loaded 3 rules.
-2026-05-13 10:00:00 [INFO] 🎤 Injecting Calibration File: 'src/umik-1/7175488.txt'
+2026-05-13 10:00:00 [INFO] 🎤 Injecting Calibration File: '/etc/ai-acoustic-monitor/7175488.txt'
 ```
 
 If the AI models are not present, the app downloads them on first run:
@@ -490,7 +503,7 @@ Returns a summary of the device's current state without requiring SSH access.
 
 Example reply:
 ```
-📊 Edge Monitor
+📊 AI Acoustic Monitor
 
 👂 Dog (0.87)
 🔓 Privacy: inactive

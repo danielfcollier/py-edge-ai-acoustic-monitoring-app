@@ -230,9 +230,9 @@ class AppSettings(BaseSettings):
 
     # --- Logging Levels (Controlled via .env) ---
     LOG_LEVEL_MAIN: str = "INFO"
-    LOG_LEVEL_POLICY_ENGINE: str = "DEBUG"
-    LOG_LEVEL_FEATURE_EXTRACTOR: str = "DEBUG"
-    LOG_LEVEL_SMART_RECORDER: str = "DEBUG"
+    LOG_LEVEL_POLICY_ENGINE: str = "INFO"
+    LOG_LEVEL_FEATURE_EXTRACTOR: str = "INFO"
+    LOG_LEVEL_SMART_RECORDER: str = "INFO"
     LOG_LEVEL_TELEGRAM: str = "INFO"
     LOG_LEVEL_SERVICES: str = "INFO"
 
@@ -297,6 +297,10 @@ class AppSettings(BaseSettings):
                 logger.warning(f"⚠️ WARNING: Calibration file at '{cal_path}' does not exist! App may crash.")
 
             base_args.calibration_file = cal_path
+        else:
+            # v0.6.0 auto-discovers calibration files from ~/.config/audio-tools/ when
+            # calibration_file is None. Suppress that — YAML config is the source of truth.
+            base_args.default = True
 
     def _apply_logging_config(self):
         """Sets log levels based on .env variables defined in this class."""

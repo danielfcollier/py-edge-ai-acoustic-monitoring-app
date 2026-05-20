@@ -4,6 +4,43 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ---------------------------------------------------------------------------
+# Flag parsing
+# ---------------------------------------------------------------------------
+FORCE=false
+for arg in "$@"; do
+    case "$arg" in
+        --force) FORCE=true ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Version guard — refuse to build if a .deb for this version already exists
+# ---------------------------------------------------------------------------
+VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
+if [ -z "$VERSION" ]; then
+    echo "Error: could not read version from pyproject.toml" >&2
+    exit 1
+fi
+
+EXISTING=$(find deb_dist -name "ai-acoustic-monitor_${VERSION}-*.deb" 2>/dev/null | head -1)
+
+if [ -n "$EXISTING" ] && [ "$FORCE" = false ]; then
+    echo ""
+    echo "  Version $VERSION already built: $EXISTING"
+    echo ""
+    echo "  Bump the version in pyproject.toml before building:"
+    echo "    version = \"$VERSION\"  →  version = \"X.Y.Z\""
+    echo ""
+    echo "  To rebuild the same version anyway:"
+    echo "    ./build_deb.sh --force"
+    echo ""
+    exit 1
+fi
+
+echo "Building version $VERSION..."
 echo "Cleaning previous builds..."
 rm -rf deb_dist dist build *.egg-info
 

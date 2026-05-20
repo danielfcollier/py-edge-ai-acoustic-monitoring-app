@@ -1,5 +1,5 @@
 """
-Main Entry Point for Edge Acoustic Monitor.
+Main Entry Point for AI Acoustic Monitor.
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
@@ -55,7 +55,7 @@ for lib in ["httpx", "httpcore"]:
 
 def parse_cli_args():
     """Parses application-specific arguments."""
-    parser = argparse.ArgumentParser(description="Edge Acoustic Monitor", add_help=False)
+    parser = argparse.ArgumentParser(description="AI Acoustic Monitor", add_help=False)
     parser.add_argument("-c", "--config", type=str, default="security_policy.yaml", help="Path to policy YAML")
     parser.add_argument("-e", "--env", type=str, default=".env", help="Path to .env file")
     parser.add_argument("--help", action="store_true", help="Show help message")
