@@ -18,7 +18,7 @@ wheels = [
 
 [[package]]
 name = "ai-acoustic-monitoring-app"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
@@ -90,7 +90,7 @@ requires-dist = [
     { name = "tensorflow", marker = "extra == 'full'", specifier = ">=2.16.0" },
     { name = "tensorflow-hub", marker = "extra == 'full'", specifier = ">=0.16.1" },
     { name = "tflite-runtime", specifier = ">=2.14.0" },
-    { name = "umik-base-app", specifier = ">=0.5.0" },
+    { name = "umik-base-app", specifier = ">=0.6.0" },
 ]
 provides-extras = ["full"]
 
@@ -3082,7 +3082,7 @@ wheels = [
 
 [[package]]
 name = "umik-base-app"
-version = "0.5"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "librosa" },
@@ -3100,9 +3100,9 @@ dependencies = [
     { name = "sounddevice" },
     { name = "textual" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/af/c4/0a6e7362ade7220050efc85baa22280a89b7b531734e83a4de518a16214e/umik_base_app-0.5.tar.gz", hash = "sha256:b6ef499a4d44cb10ec5ecd73533d3fee4828dc33ffd327a8673310afbc7e4f01", size = 1225746, upload-time = "2026-05-17T22:55:04.512Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/f2/361b432fae708a6d31d252872e747a412aa136c12843132359e7e1ec8f2a/umik_base_app-0.6.0.tar.gz", hash = "sha256:894d6bf61c8c2f34002ff2effbb1f1c2713da4f98405f0e617d2f4fc049addfc", size = 1237661, upload-time = "2026-05-19T20:51:57.07Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/1c/b16f1f310c02517992c9b52a5292f379cbb0ba38529a7f24170b32b32989/umik_base_app-0.5-py3-none-any.whl", hash = "sha256:27f636ac5a0fabad9c15508d84c155ae73c2e62209af0c9af7cae078968e24a6", size = 79044, upload-time = "2026-05-17T22:55:06.733Z" },
+    { url = "https://files.pythonhosted.org/packages/07/0a/576d7c12c856b391214e209b84e714209df465bf351f50d1a9a414c6f885/umik_base_app-0.6.0-py3-none-any.whl", hash = "sha256:5292978fc9518de398446cc5e58572a5292ae49b3b0df6fba354c9846dd58ce0", size = 81595, upload-time = "2026-05-19T20:51:58.262Z" },
 ]
 
 [[package]]

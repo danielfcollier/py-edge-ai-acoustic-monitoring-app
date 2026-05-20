@@ -9,17 +9,18 @@ No coding required. Configure with a wizard, run as a `systemd` service.
 
 ```bash
 # Add the repository
-curl -fsSL https://YOUR_APT_REPO_URL/pubkey.gpg \
+curl -fsSL https://br-se1.magaluobjects.com/ai-acoustic-monitor/ai-acoustic-monitor/pubkey.gpg \
   | sudo gpg --dearmor -o /usr/share/keyrings/ai-acoustic-monitor.gpg
 
 echo "deb [signed-by=/usr/share/keyrings/ai-acoustic-monitor.gpg] \
-  https://YOUR_APT_REPO_URL bookworm main" \
+  https://br-se1.magaluobjects.com/ai-acoustic-monitor/ai-acoustic-monitor \
+  $(lsb_release -cs) main" \
   | sudo tee /etc/apt/sources.list.d/ai-acoustic-monitor.list
 
 sudo apt-get update && sudo apt-get install ai-acoustic-monitor
 ```
 
-> **Requirements**: Debian/Ubuntu (bookworm or noble), `libportaudio2`, `libsndfile1`.
+> **Requirements**: Debian/Ubuntu (`bookworm` or `noble`), `libportaudio2`, `libsndfile1`.
 > These are installed automatically as package dependencies.
 
 
@@ -43,6 +44,17 @@ sudo ai-acoustic-monitor --install
 # View the full user manual at any time
 ai-acoustic-monitor --manual
 ```
+
+**Where files live**
+
+| Step | File | Location |
+|---|---|---|
+| `--configure credentials` | Credentials | `~/.config/ai-acoustic-monitor/.env` |
+| `--configure` | Policy YAML | `./security_policy.yaml` (current directory) |
+| `--install` | Copies both to | `/etc/ai-acoustic-monitor/` (service reads from here) |
+| `--install` (with calibration) | Calibration file | `/etc/ai-acoustic-monitor/<filename>.txt` |
+
+> If you change anything with the wizard after installation, re-run `sudo ai-acoustic-monitor --install` to apply the update to the service.
 
 ### Deployment modes
 
@@ -198,10 +210,9 @@ ai-acoustic-monitor --test --config security_policy.yaml --env ~/.config/ai-acou
   ✅ Telegram                message sent to chat 123456789
   ✅ Cloud storage           Magalu br-se1 bucket 'acoustic-logs' OK
   ⏭️  Heartbeat (HC ping)   HC_PING_URL not configured (skipped)
-  ✅ Prometheus              HTTP 200 on localhost:8000/metrics
 
 ────────────────────────────────────────────────────────────────
-  All 8 checks passed.
+  All 6 checks passed.
 ```
 
 ## ▶️ Running

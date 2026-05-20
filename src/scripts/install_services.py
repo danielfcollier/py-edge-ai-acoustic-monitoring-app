@@ -1,5 +1,5 @@
 """
-Edge Monitor System Installer.
+AI Acoustic Monitor System Installer.
 Installs systemd services for Monolithic or Distributed (Producer/Consumer) topologies.
 
 Author: Daniel Collier

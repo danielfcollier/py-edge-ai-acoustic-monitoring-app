@@ -1,6 +1,6 @@
 [project]
 name = "ai-acoustic-monitoring-app"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "umik-base-app>=0.5.0",
+    "umik-base-app>=0.6.0",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
