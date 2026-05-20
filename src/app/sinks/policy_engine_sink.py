@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Recording/upload actions must always fire so SmartBufferSink keeps the
 # recording alive for the full duration of the event, not just post_roll_seconds.
 _ALERT_ACTIONS = frozenset({"telegram_alert"})
+_RECORDING_ACTIONS = frozenset({"record_evidence", "cloud_upload"})
 
 
 class PolicyEngineSink(AudioSink):
@@ -155,8 +156,13 @@ class PolicyEngineSink(AudioSink):
             logger.info(f"🚨 Policy matched: {policy.name} [{self._context.current_event_label}]")
             logger.debug(f"   -> Actions: {non_alert_actions}")
 
-        # Alert actions: rate-limited by cooldown
+        # Alert actions: for recording-associated policies, send only on the first
+        # trigger frame (before SmartBufferSink starts the recording). For
+        # non-recording policies, use the standard cooldown.
         if can_alert and "telegram_alert" in policy.actions:
+            is_recording_policy = any(a in _RECORDING_ACTIONS for a in policy.actions)
+            if is_recording_policy and self._context.is_recording:
+                return
             self._send_telegram_alert(policy)
 
     def _send_telegram_alert(self, policy):
@@ -170,6 +176,7 @@ class PolicyEngineSink(AudioSink):
             "🚨 **Policy Triggered**",
             f"🛡️ Rule: {policy.name}",
             f"👂 Detected: {label} ({conf:.2f})",
+            f"🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}",
         ]
 
         msg = "\n".join(lines)
