@@ -55,6 +55,9 @@ class SmartBufferSink(AudioSink):
         self._audio_buffer = []
         self._peak_label = "unknown"
         self._peak_confidence = 0.0
+        self._peak_rms = 0.0
+        self._peak_dbspl = 0.0
+        self._peak_flux = 0.0
 
         self._init_csv()
         logger.info(f"💾 Smart Buffer Ready. Output: {self._output_dir}")
@@ -118,8 +121,12 @@ class SmartBufferSink(AudioSink):
         self._start_time = now
         self._fade_start_time = 0.0
         self._is_recording = True
+        self._context.is_recording = True
         self._peak_label = self._context.current_event_label or "unknown"
         self._peak_confidence = self._context.current_confidence or 0.0
+        self._peak_rms = 0.0
+        self._peak_dbspl = 0.0
+        self._peak_flux = 0.0
         pre_buffer = list(self._context.audio_pre_buffer)
         self._audio_buffer = pre_buffer[-self._pre_roll_chunks :]
         logger.info(f"🔴 Recording Started [ID: {self._event_id[:8]}]")
@@ -129,29 +136,15 @@ class SmartBufferSink(AudioSink):
 
         metrics = self._context.metrics
         label = self._context.current_event_label
-        conf = self._context.current_confidence
+        conf = self._context.current_confidence or 0.0
 
-        if conf and conf > self._peak_confidence:
+        if conf > self._peak_confidence:
             self._peak_confidence = conf
             self._peak_label = label or self._peak_label
-        cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
 
-        self._write_csv(
-            [
-                self._event_id,
-                datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-                label,
-                f"{conf:.2f}",
-                f"{metrics.get('rms', 0.0):.4f}",
-                f"{metrics.get('dbspl', 0.0):.1f}",
-                f"{metrics.get('flux', 0.0):.1f}",
-                f"{cpu:.1f}",
-                f"{ram:.1f}",
-                f"{temp:.1f}",
-                f"{disk:.1f}",
-                f"{disk_attached:.1f}",
-            ]
-        )
+        self._peak_rms = max(self._peak_rms, metrics.get("rms", 0.0))
+        self._peak_dbspl = max(self._peak_dbspl, metrics.get("dbspl", 0.0))
+        self._peak_flux = max(self._peak_flux, metrics.get("flux", 0.0))
 
     def _write_csv(self, row):
         try:
@@ -174,6 +167,24 @@ class SmartBufferSink(AudioSink):
 
         duration = len(full_audio) / self._sample_rate
 
+        cpu, ram, temp, disk, disk_attached = SystemMetrics.get_stats()
+        self._write_csv(
+            [
+                self._event_id,
+                datetime.fromtimestamp(self._start_time).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+                self._peak_label,
+                f"{self._peak_confidence:.2f}",
+                f"{self._peak_rms:.4f}",
+                f"{self._peak_dbspl:.1f}",
+                f"{self._peak_flux:.1f}",
+                f"{cpu:.1f}",
+                f"{ram:.1f}",
+                f"{temp:.1f}",
+                f"{disk:.1f}",
+                f"{disk_attached:.1f}",
+            ]
+        )
+
         raw_event = {
             "uuid": self._event_id,
             "timestamp": datetime.now().isoformat(),
@@ -194,6 +205,7 @@ class SmartBufferSink(AudioSink):
             logger.error("❌ Raw Queue Full! Dropping recording event.")
 
         self._is_recording = False
+        self._context.is_recording = False
         self._audio_buffer = []
         self._event_id = None
         self._peak_label = "unknown"
