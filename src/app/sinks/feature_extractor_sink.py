@@ -153,35 +153,44 @@ class FeatureExtractorSink(AudioSink):
     def _process_inference_batch(self):
         raw_audio = np.concatenate(self._raw_buffer)
         resampled = resampy.resample(raw_audio, self._input_sr, self._target_sr)
-
-        if len(resampled) > self._model_input_size:
-            input_data = resampled[: self._model_input_size]
-        else:
-            input_data = np.pad(resampled, (0, self._model_input_size - len(resampled)))
-
-        input_data = input_data.astype(np.float32)
-        input_data *= self._linear_gain
-        input_data = np.clip(input_data, -1.0, 1.0)
-
-        if self._config.use_tflite:
-            self._predict_tflite(input_data)
-        else:
-            self._predict_tensorflow(input_data)
-
         self._raw_buffer = []
 
-    def _predict_tflite(self, input_data):
+        stride = self._model_input_size
+        n = len(resampled)
+
+        if n < stride:
+            windows = [np.pad(resampled, (0, stride - n))]
+        else:
+            windows = [resampled[i : i + stride] for i in range(0, n - stride + 1, stride)]
+
+        all_scores = []
+        for window in windows:
+            w = window.astype(np.float32) * self._linear_gain
+            w = np.clip(w, -1.0, 1.0)
+            scores = self._infer_window(w)
+            if scores is not None:
+                all_scores.append(scores)
+
+        if all_scores:
+            self._update_context(np.mean(all_scores, axis=0))
+
+    def _infer_window(self, input_data: np.ndarray) -> np.ndarray | None:
+        if self._config.use_tflite:
+            return self._predict_tflite(input_data)
+        else:
+            return self._predict_tensorflow(input_data)
+
+    def _predict_tflite(self, input_data: np.ndarray) -> np.ndarray:
         self._interpreter.set_tensor(self._input_details[0]["index"], input_data)
         self._interpreter.invoke()
-        scores = self._interpreter.get_tensor(self._output_index)[0]
-        self._update_context(scores)
+        return self._interpreter.get_tensor(self._output_index)[0]
 
-    def _predict_tensorflow(self, input_data):
+    def _predict_tensorflow(self, input_data: np.ndarray) -> np.ndarray:
         import tensorflow as tf
 
         input_tensor = tf.convert_to_tensor(input_data, dtype=tf.float32)
         scores, _, _ = self._tf_model(input_tensor)
-        self._update_context(np.mean(scores.numpy(), axis=0))
+        return np.mean(scores.numpy(), axis=0)
 
     def _update_context(self, scores):
         if self._excluded_indices:

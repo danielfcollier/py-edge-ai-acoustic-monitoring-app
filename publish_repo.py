@@ -63,7 +63,7 @@ load_dotenv(_local_env if _local_env.is_file() else _user_env)
 DEFAULT_S3_ENDPOINT = "https://br-se1.magaluobjects.com"
 DEFAULT_S3_REGION = "br-se1"
 DEFAULT_S3_PREFIX = "ai-acoustic-monitor"
-DEFAULT_APT_DISTS = "bookworm,noble"
+DEFAULT_APT_DISTS = "bookworm,noble,trixie"
 DEFAULT_APT_COMPONENT = "main"
 DEFAULT_APT_ORIGIN = "ai-acoustic-monitor"
 DEFAULT_APT_LABEL = "ai-acoustic-monitor"
