@@ -7,8 +7,8 @@
 variables:
   day_start: 6        # 06:00 AM
   night_start: 22     # 10:00 PM
-  day_limit: 60.0     # Decibel limit for Day
-  night_limit: 50.0   # Decibel limit for Night
+  day_limit: 55.0     # Decibel limit for Day
+  night_limit: 45.0   # Decibel limit for Night
 
   # Hardware Calibration
   calibration_file_path: "src/umik-1/7175488.txt"
@@ -24,7 +24,7 @@ services:
   internet_enabled: false
   
   # Control Variable for Storage
-  recording_output_path: "recordings" 
+  recording_output_path: "test-recordings" 
   
   # Health Monitoring
   heartbeat_enabled: false
@@ -53,8 +53,8 @@ feature_extractor:
   use_tflite: true
 
   sad_threshold_rms: 0.002
-  sad_threshold_flux: 5.0
-  sad_threshold_dbspl: 55.0
+  sad_threshold_flux: 1.5
+  sad_threshold_dbspl: 50.0
 
 # --- Reporting & Analysis Configuration ---
 reporting:
@@ -89,7 +89,7 @@ policies:
   - name: "TEST: Telegram Alert"
     description: "Speak to test Telegram."
     # EXPANDED LABELS: Speech, Narration, Conversation, Yell are all vocal.
-    condition: "current_event_label in ['Speech', 'Narration', 'Conversation', 'Yell'] and current_confidence > 0.5"
+    condition: "current_event_label in ['Speech', 'Narration', 'Conversation', 'Yell'] and current_confidence > 0.4"
     actions: 
       - "telegram_alert"
       - "log_metadata"
@@ -99,7 +99,7 @@ policies:
   - name: "TEST: Physics Trigger"
     description: "Snap/Tap for physics trigger."
     # Pure physics (no AI dependency) is the most reliable fallback.
-    condition: "metrics['flux'] > 25.0 and metrics['dbspl'] > 58.0"
+    condition: "metrics['flux'] > 5.0 or metrics['dbspl'] > 55.0"
     actions: 
       - "record_evidence"
       - "telegram_alert"

@@ -26,7 +26,7 @@ help: ## Show this help message.
 .PHONY: install setup venv lock
 install: setup venv ## Install all dependencies (Prod + Dev).
 	@echo -e "$(GREEN)>>> Installing dependencies with uv...$(NC)"
-	@$(UV) sync --extra dev
+	@$(UV) sync --group dev
 	@echo -e "$(GREEN)>>> Installation complete. Run 'make setup-models' next.$(NC)"
 
 setup: ## Install system libraries (Ubuntu/Debian).
@@ -187,7 +187,7 @@ vendor: ## Bundle all Python deps into src/app/vendor/ for .deb install
 	mkdir -p src/app/vendor
 	touch src/app/vendor/__init__.py
 	uv export --no-dev --frozen --format requirements-txt | grep -v "file://" > requirements.frozen.txt
-	uv pip install -r requirements.frozen.txt --target src/app/vendor --python 3.11
+	uv pip install -r requirements.frozen.txt --target src/app/vendor
 	rm requirements.frozen.txt
 	@printf "%s\n" "✅ Vendor populated."
 

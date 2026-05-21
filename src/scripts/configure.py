@@ -624,8 +624,8 @@ def _test_cloud(env_path: str, config_path: str) -> bool | None:
             return True
 
         elif provider == "gcp":
-            from google.cloud import storage as gcs  # noqa: PLC0415
             from google.api_core.exceptions import NotFound  # noqa: PLC0415
+            from google.cloud import storage as gcs  # noqa: PLC0415
 
             creds_path = cloud_cfg.get("gcp_credentials_path") or env.get("GOOGLE_APPLICATION_CREDENTIALS")
             client = gcs.Client() if not creds_path else gcs.Client.from_service_account_json(creds_path)
@@ -698,9 +698,9 @@ def cmd_test(config_path: str, env_path: str) -> None:
     results.append(_test_cloud(env_path, config_path))
     results.append(_test_heartbeat(env_path, config_path))
 
-    passed  = sum(1 for r in results if r is True)
+    passed = sum(1 for r in results if r is True)
     skipped = sum(1 for r in results if r is None)
-    failed  = sum(1 for r in results if r is False)
+    failed = sum(1 for r in results if r is False)
 
     print()
     _hr()
@@ -764,6 +764,7 @@ def _main_menu(config_path: str, env_path: str) -> None:
 
     def _cmd_run():
         import shlex  # noqa: PLC0415
+
         cmd = ["ai-acoustic-monitor-run", "--config", config_path, "--env", env_path]
         print(f"\n  Running: {shlex.join(cmd)}\n")
         os.execvp(cmd[0], cmd)
@@ -816,6 +817,7 @@ def main() -> None:
     )
     try:
         from importlib.metadata import version as _pkg_version  # noqa: PLC0415
+
         _version = _pkg_version("ai-acoustic-monitoring-app")
     except Exception:
         _version = "unknown"
@@ -877,6 +879,7 @@ def main() -> None:
         cmd_test(args.config, args.env)
     elif args.run:
         import shlex  # noqa: PLC0415
+
         cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env]
         print(f"Running: {shlex.join(cmd)}")
         os.execvp(cmd[0], cmd)
