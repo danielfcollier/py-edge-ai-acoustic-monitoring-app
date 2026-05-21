@@ -41,11 +41,7 @@ def cmd_download(client, bucket: str, dest: Path):
 
 def cmd_clean(client, bucket: str):
     paginator = client.get_paginator("list_objects_v2")
-    keys = [
-        obj["Key"]
-        for page in paginator.paginate(Bucket=bucket)
-        for obj in page.get("Contents", [])
-    ]
+    keys = [obj["Key"] for page in paginator.paginate(Bucket=bucket) for obj in page.get("Contents", [])]
     if not keys:
         print("Bucket is already empty.")
         return

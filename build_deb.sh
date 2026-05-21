@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 FORCE=false
 for arg in "$@"; do
     case "$arg" in
-        --force) FORCE=true ;;
+        --force|--skip) FORCE=true ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
@@ -40,7 +40,8 @@ if [ -n "$EXISTING" ] && [ "$FORCE" = false ]; then
     exit 1
 fi
 
-echo "Building version $VERSION..."
+PYVER=${BUILD_PYTHON_VERSION:-$(uv run python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")}
+echo "Building version $VERSION (python${PYVER})..."
 echo "Cleaning previous builds..."
 rm -rf deb_dist dist build *.egg-info
 
@@ -54,24 +55,41 @@ cd deb_dist/ai-acoustic-monitoring-app-*/
 sed -i 's/^Build-Depends:.*/Build-Depends: debhelper (>= 9), dh-python, python3-all, python3-setuptools/' debian/control
 
 # stdeb expands ${python3:Depends} to include vendored packages as system deps,
-# which breaks install. Use explicit python3.11 + system audio libs instead.
-sed -i 's/^Depends:.*/Depends: ${misc:Depends}, python3.11, libportaudio2, libsndfile1/' debian/control
+# which breaks install. Use an explicit python3.x + system audio libs instead.
+sed -i "s/^Depends:.*/Depends: \${misc:Depends}, python${PYVER}, libportaudio2, libsndfile1/" debian/control
+
+# Vendored C extensions are compiled for a specific arch; mark as arch-specific
+# so dpkg-buildpackage produces _arm64.deb (not _all.deb).
+sed -i 's/^Architecture:.*/Architecture: any/' debian/control
 
 echo "Fixed debian/control:"
-grep -E "^(Package|Depends|Build-Depends):" debian/control
+grep -E "^(Package|Architecture|Depends|Build-Depends):" debian/control
+grep -q "^Architecture: any" debian/control || { echo "ERROR: Architecture patch failed"; exit 1; }
+
+echo "Disabling debhelper steps that break on vendored .so files..."
+cat >> debian/rules << 'RULES_APPEND'
+
+override_dh_python3:
+
+override_dh_shlibdeps:
+
+override_dh_strip:
+
+override_dh_dwz:
+RULES_APPEND
 
 echo "Writing debian/postinst..."
-cat > debian/postinst << 'POSTINST'
+cat > debian/postinst << POSTINST_EOF
 #!/bin/sh
 set -e
-# Vendored C extensions were compiled for Python 3.11; patch the auto-generated shebang.
+# Vendored C extensions were compiled for Python ${PYVER}; patch the auto-generated shebang.
 for cmd in ai-acoustic-monitor-run ai-acoustic-monitor ai-acoustic-monitor-setup-models ai-acoustic-monitor-install-service; do
-    if [ -f "/usr/bin/$cmd" ]; then
-        sed -i '1s|^#!/usr/bin/python3$|#!/usr/bin/python3.11|' "/usr/bin/$cmd"
+    if [ -f "/usr/bin/\$cmd" ]; then
+        sed -i "1s|^#!/usr/bin/python3\$|#!/usr/bin/python${PYVER}|" "/usr/bin/\$cmd"
     fi
 done
 #DEBHELPER#
-POSTINST
+POSTINST_EOF
 chmod +x debian/postinst
 
 echo "Compiling .deb package..."
