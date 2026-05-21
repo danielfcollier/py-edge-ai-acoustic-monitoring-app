@@ -50,7 +50,7 @@ services:
 
 # --- AI Model Configuration ---
 feature_extractor:
-  use_tflite: true
+  model_path: "src/yamnet/yamnet.onnx"
 
   sad_threshold_rms: 0.002
   sad_threshold_flux: 1.5

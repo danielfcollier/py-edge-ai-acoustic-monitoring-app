@@ -16,8 +16,7 @@ def _make_settings():
     m = MagicMock()
     m.AUDIO.SAMPLE_RATE = 48000  # used in int() during __init__
     cfg = m.CONFIG.feature_extractor
-    cfg.use_tflite = True
-    cfg.model_path_lite = sentinel.MODEL_PATH_LITE    # patched, never accessed
+    cfg.model_path = sentinel.MODEL_PATH              # patched, never accessed
     cfg.model_path_full = sentinel.MODEL_PATH_FULL    # patched, never accessed
     cfg.class_map_path = sentinel.CLASS_MAP_PATH      # patched, never accessed
     cfg.force_cpu = True
@@ -36,7 +35,7 @@ def _make_sink(context):
         patch.object(FeatureExtractorSink, "_load_classes"),
         patch.object(FeatureExtractorSink, "_resolve_excluded_indices"),
         patch.object(FeatureExtractorSink, "_model_exists", return_value=True),
-        patch.object(FeatureExtractorSink, "_init_tflite"),
+        patch.object(FeatureExtractorSink, "_init_onnx"),
     ):
         sink = FeatureExtractorSink(context)
     sink._metrics = MagicMock()

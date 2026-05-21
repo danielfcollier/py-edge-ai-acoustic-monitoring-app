@@ -64,7 +64,7 @@ def parse_cli_args():
 
 def ensure_models_present():
     """Checks/Downloads AI models."""
-    model_path = Path("src/yamnet/yamnet.tflite")
+    model_path = Path("src/yamnet/yamnet.onnx")
     if not model_path.exists():
         logger.info("⬇️ First run detected. Downloading AI models...")
         from scripts import setup_models
