@@ -125,10 +125,7 @@ class PolicyEngineSink(AudioSink):
                         logger.debug(f"   ⏳ Alert cooldown for '{policy.name}' ({remaining}s remaining).")
 
                     # 3. Apply Actions (recording/upload always fire; alerts are rate-limited)
-                    self._trigger_policy(policy, can_alert)
-
-                    if can_alert and "telegram_alert" in policy.actions:
-                        self._last_alert_times[policy.name] = current_time
+                    self._trigger_policy(policy, can_alert, current_time)
 
             except Exception as e:
                 # Log error but don't crash the pipeline
@@ -139,7 +136,7 @@ class PolicyEngineSink(AudioSink):
         last_time = self._last_alert_times.get(policy_name, float("-inf"))
         return (now - last_time) > self._alert_cooldown
 
-    def _trigger_policy(self, policy, can_alert: bool) -> None:
+    def _trigger_policy(self, policy, can_alert: bool, current_time: float) -> None:
         """
         Applies a matched policy's actions to the context.
 
@@ -164,6 +161,7 @@ class PolicyEngineSink(AudioSink):
             if is_recording_policy and self._context.is_recording:
                 return
             self._send_telegram_alert(policy)
+            self._last_alert_times[policy.name] = current_time
 
     def _send_telegram_alert(self, policy):
         """
