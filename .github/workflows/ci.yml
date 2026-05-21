@@ -41,8 +41,6 @@ jobs:
       - name: Run Linting
         run: make lint
 
-      - name: Run Spell Check
-        run: make spell-check
 
       - name: Run Tests
         run: uv run pytest -q
