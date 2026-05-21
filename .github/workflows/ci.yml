@@ -69,21 +69,21 @@ jobs:
             debhelper dh-python build-essential dpkg-dev \
             libportaudio2 libsndfile1
 
-      - name: Install Python 3.12 via uv
-        run: uv python install 3.12
+      - name: Install Python 3.11 via uv
+        run: uv python install 3.11
 
       - name: Install project and dev dependencies
         run: uv sync --group dev --no-install-project
 
-      - name: Vendor dependencies (ARM64, py3.12)
+      - name: Vendor dependencies (ARM64, py3.11)
         run: |
           mkdir -p src/app/vendor
           touch src/app/vendor/__init__.py
           uv export --no-dev --frozen --format requirements-txt | grep -v "file://" > requirements.frozen.txt
-          uv pip install -r requirements.frozen.txt --target src/app/vendor --python 3.12
+          uv pip install -r requirements.frozen.txt --target src/app/vendor --python 3.11
           rm requirements.frozen.txt
 
       - name: Build .deb
         env:
-          BUILD_PYTHON_VERSION: "3.12"
+          BUILD_PYTHON_VERSION: "3.11"
         run: bash build_deb.sh --skip
