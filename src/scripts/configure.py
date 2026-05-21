@@ -278,7 +278,7 @@ def _build_config(
         "",
         "# ── AI Feature Extractor ────────────────────────────────────",
         "feature_extractor:",
-        "  use_tflite: true",
+        "  model_path: src/yamnet/yamnet.onnx",
         "  sad_threshold_rms: 0.002",
         "  sad_threshold_flux: 5.0",
         "  sad_threshold_dbspl: 45.0",

@@ -109,8 +109,7 @@ class PolicyRule(BaseModel):
 
 
 class FeatureExtractorConfig(BaseModel):
-    use_tflite: bool = True
-    model_path_lite: str = "src/yamnet/yamnet.tflite"
+    model_path: str = "src/yamnet/yamnet.onnx"
     model_path_full: str = "src/yamnet/model"
     class_map_path: str = "src/yamnet/class_map/yamnet_class_map.csv"
 

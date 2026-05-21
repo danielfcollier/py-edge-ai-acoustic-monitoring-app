@@ -209,6 +209,7 @@ __marimo__/
 
 recordings/
 recordings_old/
+test-recordings/
 src/app/vendor/
 deb_dist/
 ai_acoustic_monitoring_app-*

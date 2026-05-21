@@ -13,7 +13,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
-    "tflite-runtime>=2.14.0",
+    "onnxruntime>=1.19.0",
     "numpy>=1.23.0,<2",
     "rule-engine>=4.5.3",
     "pyyaml>=6.0.3",
