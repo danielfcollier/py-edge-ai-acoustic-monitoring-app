@@ -49,17 +49,12 @@ class FeatureExtractorSink(AudioSink):
             logger.info("⬇️ First run detected. Downloading YAMNet models...")
             self._download_models()
 
-        if self._config.use_tflite:
-            self._init_tflite()
-        else:
-            self._init_tensorflow()
+        self._init_onnx()
 
         logger.info(f"📌 Feature Extractor Ready. Input: {self._input_sr}Hz -> Model: {self._target_sr}Hz")
 
     def _model_exists(self) -> bool:
-        if self._config.use_tflite:
-            return Path(self._config.model_path_lite).exists()
-        return Path(self._config.model_path_full).exists()
+        return Path(self._config.model_path).exists()
 
     def _download_models(self):
         from scripts import setup_models
@@ -84,47 +79,23 @@ class FeatureExtractorSink(AudioSink):
         if self._excluded_indices:
             logger.info(f"🚫 Exclusion Active. Muting {len(self._excluded_indices)} classes: {list(excluded_names)}")
 
-    def _init_tflite(self):
+    def _init_onnx(self):
         try:
-            import tflite_runtime.interpreter as tflite
+            import onnxruntime as ort
         except ImportError:
-            try:
-                import tensorflow.lite as tflite
-            except ImportError:
-                raise ImportError("TFLite runtime not found. Install 'tflite-runtime'.")
+            raise ImportError("onnxruntime not found. Install 'onnxruntime'.")
 
-        model_path = self._config.model_path_lite
+        model_path = self._config.model_path
         if not Path(model_path).exists():
-            raise FileNotFoundError(f"TFLite Model not found at {model_path}")
+            raise FileNotFoundError(f"ONNX model not found at {model_path}")
 
-        logger.info(f"Loading TFLite model: {model_path}")
-        self._interpreter = tflite.Interpreter(model_path=model_path)
-        self._interpreter.allocate_tensors()
-        self._input_details = self._interpreter.get_input_details()
-        self._output_details = self._interpreter.get_output_details()
-        self._output_index = self._output_details[0]["index"]
-
-    def _init_tensorflow(self):
-        try:
-            import tensorflow as tf
-        except ImportError:
-            raise ImportError("TensorFlow not found. Install 'tensorflow'.")
-
-        if self._config.force_cpu:
-            try:
-                gpus = tf.config.list_physical_devices("GPU")
-                if gpus:
-                    tf.config.set_visible_devices([], "GPU")
-                    logger.info("🚫 GPU disabled by configuration (force_cpu=True).")
-            except Exception as e:
-                logger.warning(f"Failed to force CPU mode: {e}")
-
-        model_path = self._config.model_path_full
-        if not Path(model_path).exists():
-            raise FileNotFoundError(f"Full Model not found at {model_path}")
-
-        logger.info(f"Loading Full TensorFlow model: {model_path}")
-        self._tf_model = tf.saved_model.load(model_path)
+        logger.info(f"Loading ONNX model: {model_path}")
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        self._session = ort.InferenceSession(model_path, sess_options=opts)
+        self._input_name = self._session.get_inputs()[0].name
+        self._output_name = self._session.get_outputs()[0].name
 
     def handle(self, ctx: AudioCtx) -> None:
         # Lazy-init gain boost from ctx calibration metadata
@@ -167,30 +138,15 @@ class FeatureExtractorSink(AudioSink):
         for window in windows:
             w = window.astype(np.float32) * self._linear_gain
             w = np.clip(w, -1.0, 1.0)
-            scores = self._infer_window(w)
+            scores = self._predict_onnx(w)
             if scores is not None:
                 all_scores.append(scores)
 
         if all_scores:
             self._update_context(np.mean(all_scores, axis=0))
 
-    def _infer_window(self, input_data: np.ndarray) -> np.ndarray | None:
-        if self._config.use_tflite:
-            return self._predict_tflite(input_data)
-        else:
-            return self._predict_tensorflow(input_data)
-
-    def _predict_tflite(self, input_data: np.ndarray) -> np.ndarray:
-        self._interpreter.set_tensor(self._input_details[0]["index"], input_data)
-        self._interpreter.invoke()
-        return self._interpreter.get_tensor(self._output_index)[0]
-
-    def _predict_tensorflow(self, input_data: np.ndarray) -> np.ndarray:
-        import tensorflow as tf
-
-        input_tensor = tf.convert_to_tensor(input_data, dtype=tf.float32)
-        scores, _, _ = self._tf_model(input_tensor)
-        return np.mean(scores.numpy(), axis=0)
+    def _predict_onnx(self, input_data: np.ndarray) -> np.ndarray:
+        return self._session.run([self._output_name], {self._input_name: input_data})[0][0]
 
     def _update_context(self, scores):
         if self._excluded_indices:

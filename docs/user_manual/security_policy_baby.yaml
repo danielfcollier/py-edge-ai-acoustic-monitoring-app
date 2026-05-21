@@ -1,7 +1,7 @@
 # 👶 Smart Baby Monitor (Nursery Mode)
 
 feature_extractor:
-  use_tflite: true
+  model_path: "src/yamnet/yamnet.onnx"
   inference_interval_ms: 975 # Lower threshold in settings might be needed, or handle it via logic below
 
 reporting:
