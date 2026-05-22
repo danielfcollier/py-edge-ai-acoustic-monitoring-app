@@ -29,11 +29,19 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Resource discovery — installed .deb → dev checkout fallback
 # ---------------------------------------------------------------------------
-_INSTALL_PROFILES = Path("/usr/lib/ai-acoustic-monitor/profiles")
+_INSTALL_BASE = Path("/usr/lib/ai-acoustic-monitor")
+_INSTALL_PROFILES = _INSTALL_BASE / "profiles"
 _INSTALL_MANUAL = Path("/usr/share/doc/ai-acoustic-monitor/USER_MANUAL.md")
 _DEV_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEV_PROFILES = _DEV_ROOT / "docs" / "user_manual"
 _DEV_MANUAL = _DEV_PROFILES / "USER_MANUAL.md"
+
+
+def _model_path() -> str:
+    installed = _INSTALL_BASE / "yamnet.onnx"
+    if installed.exists():
+        return str(installed)
+    return "src/yamnet/yamnet.onnx"
 
 CONFIG_DIR = Path.home() / ".config" / "ai-acoustic-monitor"
 ENV_FILE = CONFIG_DIR / ".env"
@@ -278,7 +286,7 @@ def _build_config(
         "",
         "# ── AI Feature Extractor ────────────────────────────────────",
         "feature_extractor:",
-        "  model_path: src/yamnet/yamnet.onnx",
+        f"  model_path: {_model_path()}",
         "  sad_threshold_rms: 0.002",
         "  sad_threshold_flux: 5.0",
         "  sad_threshold_dbspl: 45.0",
