@@ -84,7 +84,7 @@ def main():
     if args.env and Path(args.env).exists():
         logger.info(f"Loading secrets from {args.env}")
 
-    settings.load_policy_file(args.config)
+    settings.load_policy_file(args.config, env_path=args.env)
 
     svc_cfg = settings.CONFIG.services
     if svc_cfg.prometheus_enabled:
