@@ -138,11 +138,11 @@ policies:
     ignore_privacy: true
 
   - name: "Suspicious Activity (Night)"
-    description: "Knocks, door movements, and footsteps during sleeping hours."
+    description: "Knocks, door movements, and footsteps during 00:00–06:59."
     condition: >
       current_event_label in [
         'Knock', 'Door', 'Sliding door', 'Walk, footsteps'
-      ] and current_confidence > 0.5 and (is_night or current_hour < 7)
+      ] and current_confidence > 0.5 and current_hour < 7
     actions:
       - "log_metadata"
       - "record_evidence"
