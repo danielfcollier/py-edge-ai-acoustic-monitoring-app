@@ -9,6 +9,7 @@ Year: 2026
 
 import asyncio
 import logging
+import threading
 import time
 
 from telegram import Bot
@@ -18,6 +19,8 @@ from ..settings import settings
 
 logger = logging.getLogger(__name__)
 
+_SEND_TIMEOUT = 10  # seconds to wait for a send to complete
+
 
 class TelegramBotClient:
     def __init__(self):
@@ -26,12 +29,10 @@ class TelegramBotClient:
             self._token = settings.TELEGRAM_BOT_TOKEN
             self._chat_id = settings.TELEGRAM_CHAT_ID
             self._bot = Bot(token=self._token)
-
-            try:
-                self._loop = asyncio.get_event_loop()
-            except RuntimeError:
-                self._loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(self._loop)
+            # Dedicated loop in a daemon thread — safe to call from any context,
+            # including from inside another running event loop (e.g. the command receiver).
+            self._loop = asyncio.new_event_loop()
+            threading.Thread(target=self._loop.run_forever, daemon=True, name="TelegramSendLoop").start()
 
     def send_message_sync(self, text: str) -> bool:
         if not self._enabled:
@@ -42,7 +43,11 @@ class TelegramBotClient:
 
         for attempt in range(1, retries + 2):
             try:
-                self._loop.run_until_complete(self._bot.send_message(chat_id=self._chat_id, text=text))
+                future = asyncio.run_coroutine_threadsafe(
+                    self._bot.send_message(chat_id=self._chat_id, text=text),
+                    self._loop,
+                )
+                future.result(timeout=_SEND_TIMEOUT)
                 return True
             except NetworkError:
                 if attempt <= retries:

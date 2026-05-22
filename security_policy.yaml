@@ -17,7 +17,7 @@ hardware:
 
 # --- System Services Configuration ---
 services:
-  internet_enabled: true
+  internet_enabled: false
   
   # Control Variable for Storage
   recording_output_path: "recordings" 
@@ -42,32 +42,15 @@ services:
   cloud:
     provider: "magalu"
     bucket_name: "acoustic-logs"
+    region: "br-se1"       # Magalu: br-se1 | br-ne1   AWS: us-east-1 | sa-east-1 | ...
 
 # --- AI Model Configuration ---
 feature_extractor:
   use_tflite: false 
 
   sad_threshold_rms: 0.002
-  sad_threshold_flux: 5.0
+  sad_threshold_flux: 3.0
   sad_threshold_dbspl: 45.0
-
-# --- Reporting & Analysis Configuration ---
-reporting:
-  days_to_report: 30
-  
-  limits:
-    day_db: "{day_limit}"
-    night_db: "{night_limit}"
-  
-  category_mapping:
-    "intruder_alert": "Security"
-    "help_shout": "Security"
-    "glass_break_verified": "Security"
-    "Speech": "Vocals"
-    "Narration": "Vocals"
-    "Music": "Nuisance"
-    "Musical_instrument": "Nuisance"
-    "Domestic_animals": "Nature"
 
 # --- Security Policies ---
 policies:
@@ -100,3 +83,21 @@ policies:
     actions:
       - "cloud_upload"
     ignore_privacy: false
+
+# --- Reporting & Analysis Configuration ---
+reporting:
+  days_to_report: 30
+  
+  limits:
+    day_db: "{day_limit}"
+    night_db: "{night_limit}"
+  
+  category_mapping:
+    "intruder_alert": "Security"
+    "help_shout": "Security"
+    "glass_break_verified": "Security"
+    "Speech": "Vocals"
+    "Narration": "Vocals"
+    "Music": "Nuisance"
+    "Musical_instrument": "Nuisance"
+    "Domestic_animals": "Nature"

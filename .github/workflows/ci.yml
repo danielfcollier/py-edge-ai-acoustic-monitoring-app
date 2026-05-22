@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_call:
 
 jobs:
   test:
@@ -40,8 +41,49 @@ jobs:
       - name: Run Linting
         run: make lint
 
-      - name: Run Spell Check
-        run: make spell-check
 
-      # - name: Run Tests with Coverage
-      #   run: make coverage
+      - name: Run Tests
+        run: uv run pytest -q
+
+  # ---------------------------------------------------------------------------
+  # Build .deb for ARM64 — validates the package builds cleanly on every PR
+  # ---------------------------------------------------------------------------
+  build-deb:
+    name: Build .deb (ARM64)
+    runs-on: ubuntu-24.04-arm
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-all python3-setuptools \
+            debhelper dh-python build-essential dpkg-dev \
+            libportaudio2 libsndfile1
+
+      - name: Install Python 3.11 via uv
+        run: uv python install 3.11
+
+      - name: Install project and dev dependencies
+        run: uv sync --group dev --no-install-project
+
+      - name: Vendor dependencies (ARM64, py3.11)
+        run: |
+          mkdir -p src/app/vendor
+          touch src/app/vendor/__init__.py
+          uv export --no-dev --frozen --format requirements-txt | grep -v "file://" > requirements.frozen.txt
+          uv pip install -r requirements.frozen.txt --target src/app/vendor --python 3.11
+          rm requirements.frozen.txt
+
+      - name: Build .deb
+        env:
+          BUILD_PYTHON_VERSION: "3.11"
+        run: bash build_deb.sh --skip

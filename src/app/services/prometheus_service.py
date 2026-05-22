@@ -36,7 +36,7 @@ class PrometheusService:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(PrometheusService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
@@ -75,26 +75,37 @@ class PrometheusService:
         # --- Background Reset Thread ---
         self._stop_event = threading.Event()
         self._reset_interval = PROMETHEUS_RESET_INTERVAL
+        self._started = False
 
     def start(self, port=PORT_PROMETHEUS_SERVER):
         """
         Starts the Prometheus HTTP server and the sync loop.
+        Idempotent — safe to call multiple times; only the first call has effect.
         :param port: The HTTP port to expose metrics on.
         """
+        if self._started:
+            return
+        self._started = True
         try:
             start_http_server(port)
-            threading.Thread(target=self._syncer_loop, daemon=True).start()
             logger.info(f"📊 Metrics Service (Max-Hold) started on port {port}")
-        except Exception as e:
-            logger.error(f"❌ Failed to start metrics server: {e}")
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                logger.warning(
+                    f"⚠️ Prometheus port {port} already in use — skipping HTTP server (metrics still collected)"
+                )
+            else:
+                logger.warning(f"⚠️ Could not start metrics server: {e}")
+        threading.Thread(target=self._syncer_loop, daemon=True).start()
 
-    def update_audio(self, dbspl: float, rms: float, flux: float):
+    def update_audio(self, rms: float, flux: float, dbspl: float | None = None):
         """
         Thread-safe update for audio physics.
         Keeps the HIGHEST value seen since the last sync.
+        dbspl is only provided when the mic is calibrated; omit it otherwise.
         """
         with self._lock:
-            if dbspl > self._max_dbspl:
+            if dbspl is not None and dbspl > self._max_dbspl:
                 self._max_dbspl = dbspl
             if rms > self._max_rms:
                 self._max_rms = rms
@@ -136,14 +147,14 @@ class PrometheusService:
                 break
 
             with self._lock:
-                # 1. Push the Max value seen in this interval to Prometheus
-                self._g_dbspl.set(self._max_dbspl)
+                # dBSPL is only pushed when a calibrated value arrived this interval.
+                # Leaving the gauge unset keeps uncalibrated devices from emitting fake data.
+                if self._max_dbspl > MAX_DBSPL:
+                    self._g_dbspl.set(self._max_dbspl)
                 self._g_rms.set(self._max_rms)
                 self._g_flux.set(self._max_flux)
                 self._g_conf.set(self._max_conf)
 
-                # 2. Reset buffers for the next interval
-                # We reset to the "floor" so we can catch new peaks
                 self._max_dbspl = MAX_DBSPL
                 self._max_rms = MAX_RMS
                 self._max_flux = MAX_FLUX
