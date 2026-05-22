@@ -20,6 +20,11 @@ def get_data_files():
     if profiles:
         data_files.append((f"{base}/profiles", profiles))
 
+    # YAMNet ONNX model → /usr/lib/ai-acoustic-monitor/yamnet.onnx
+    onnx = "src/yamnet/yamnet.onnx"
+    if os.path.isfile(onnx):
+        data_files.append((base, [onnx]))
+
     # User manual → /usr/share/doc/ai-acoustic-monitor/
     manual = "docs/user_manual/USER_MANUAL.md"
     if os.path.isfile(manual):
