@@ -38,11 +38,11 @@ CSV_CHECK_INTERVAL_SECONDS = 10
 RETRY_INTERVAL_SECONDS = 60
 
 # --- File & Path Templates ---
-FILENAME_OFFLINE_RECORDING = "evidence_{uuid}_{label}.wav"
-FILENAME_ROTATED_CSV = "metrics_{timestamp}.csv"
+FILENAME_OFFLINE_RECORDING = "evidence-{timestamp}-{uuid}.wav"
+FILENAME_ROTATED_CSV = "metrics-{date}.csv"
 
 # --- Cloud Key Templates ---
-S3_KEY_RECORDING = "recordings/evidence_{uuid}.wav"
+S3_KEY_RECORDING = "recordings/evidence-{timestamp}-{uuid}.wav"
 S3_KEY_METRICS = "metrics/{filename}"
 
 
@@ -72,25 +72,37 @@ class CloudUploaderService:
 
     def _init_provider(self):
         """
-        Initializes the appropriate cloud storage provider (AWS or Magalu) based on settings.
+        Initializes the appropriate cloud storage provider based on settings.
         """
         cfg = self._cloud_cfg
         if cfg.provider == "magalu":
-            logger.info("☁️  Using Magalu Cloud (S3 Compatible)")
+            # MAGALU_URL in .env is an explicit override; otherwise derive from region.
+            endpoint = settings.MAGALU_URL or f"https://{cfg.region}.magaluobjects.com"
+            logger.info(f"☁️  Using Magalu Cloud — {endpoint}")
             return S3Provider(
-                access_key=settings.MAGALU_ACCESS_KEY or cfg.aws_access_key,
-                secret_key=settings.MAGALU_SECRET_KEY or cfg.aws_secret_key,
+                access_key=settings.MAGALU_ACCESS_KEY,
+                secret_key=settings.MAGALU_SECRET_KEY,
                 bucket_name=cfg.bucket_name,
-                endpoint_url="https://s3.magaluobjects.com",
+                endpoint_url=endpoint,
             )
         elif cfg.provider == "aws":
-            logger.info("☁️  Using AWS S3")
+            logger.info(f"☁️  Using AWS S3 — region: {cfg.region}")
+            # Credentials are read from env automatically by boto3
+            # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).
             return S3Provider(
-                access_key=cfg.aws_access_key,
-                secret_key=cfg.aws_secret_key,
+                access_key=None,
+                secret_key=None,
                 bucket_name=cfg.bucket_name,
-                region=cfg.aws_region,
+                region=cfg.region,
             )
+        elif cfg.provider == "gcp":
+            import os
+
+            from .cloud_storage_providers import GCPStorageProvider
+
+            creds = cfg.gcp_credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            logger.info("☁️  Using GCP Cloud Storage")
+            return GCPStorageProvider(credentials_path=creds, bucket_name=cfg.bucket_name)
         return None
 
     def start(self):
@@ -98,7 +110,7 @@ class CloudUploaderService:
         threading.Thread(target=self._stream_worker, name="UploaderStream", daemon=True).start()
         threading.Thread(target=self._csv_batch_worker, name="UploaderCSV", daemon=True).start()
         threading.Thread(target=self._retry_worker, name="UploaderRetry", daemon=True).start()
-        logger.info(f"☁️ Cloud Uploader Started. Storage: {self._recordings_dir}")
+        logger.info(f"☁️  Cloud Uploader Started. Storage: {self._recordings_dir}")
 
     def stop(self):
         """Signals all workers to stop."""
@@ -116,8 +128,6 @@ class CloudUploaderService:
                 continue
 
             uuid_str = event["uuid"]
-            meta = event.get("metadata", {})
-            label = meta.get("label", "unknown")
 
             try:
                 wav_buffer = io.BytesIO()
@@ -134,14 +144,14 @@ class CloudUploaderService:
                 success = self._attempt_direct_upload(wav_buffer, event)
 
             if not success:
-                self._save_offline_fallback(wav_buffer, uuid_str, label)
+                self._save_offline_fallback(wav_buffer, uuid_str, event["timestamp"])
 
     def _attempt_direct_upload(self, wav_buffer: io.BytesIO, event: dict) -> bool:
         """
         Uploads an in-memory WAV file directly to S3/Magalu.
         Returns True if successful, False otherwise.
         """
-        key = S3_KEY_RECORDING.format(uuid=event["uuid"])
+        key = S3_KEY_RECORDING.format(timestamp=event["timestamp"], uuid=event["uuid"])
         meta = event.get("metadata", {})
 
         s3_metadata = {
@@ -171,12 +181,20 @@ class CloudUploaderService:
             wav_buffer.seek(0)
             return False
 
-    def _save_offline_fallback(self, wav_buffer: io.BytesIO, uuid_str: str, label: str):
+    def _save_offline_fallback(self, wav_buffer: io.BytesIO, uuid_str: str, timestamp_iso: str):
         """
         Saves the WAV file to local disk (Dead Letter Queue) for later retry.
         """
-        filename = FILENAME_OFFLINE_RECORDING.format(uuid=uuid_str, label=label)
-        path = self._recordings_dir / filename
+        try:
+            dt = datetime.fromisoformat(timestamp_iso)
+        except ValueError:
+            dt = datetime.now()
+
+        formatted_time = dt.strftime("%Y%m%d_%H%M%S")
+
+        filename = FILENAME_OFFLINE_RECORDING.format(timestamp=formatted_time, uuid=uuid_str)
+        path = Path(self._recordings_dir, filename)
+
         try:
             with open(path, "wb") as f:
                 f.write(wav_buffer.getbuffer())
@@ -220,9 +238,9 @@ class CloudUploaderService:
         Renames the current CSV log and attempts to upload it.
         Deletes the file upon successful upload.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        rotated_name = FILENAME_ROTATED_CSV.format(timestamp=timestamp)
-        rotated_path = self._recordings_dir / rotated_name
+        datestamp = datetime.now().strftime("%Y%m%d")
+        rotated_name = FILENAME_ROTATED_CSV.format(date=datestamp)
+        rotated_path = Path(self._recordings_dir, rotated_name)
 
         try:
             shutil.move(str(csv_path), str(rotated_path))
@@ -252,7 +270,7 @@ class CloudUploaderService:
             if not self._config.internet_enabled or not self._provider:
                 continue
 
-            offline_files = list(self._recordings_dir.glob("evidence_*.wav"))
+            offline_files = list(self._recordings_dir.glob("evidence-*.wav"))
             if not offline_files:
                 continue
 
@@ -261,8 +279,9 @@ class CloudUploaderService:
                 if self._stop_event.is_set():
                     break
                 try:
-                    file_uuid = wav_path.name.split("_")[1]
-                    key = S3_KEY_RECORDING.format(uuid=file_uuid)
+                    parts = wav_path.stem.split("-", 2)
+                    file_timestamp, file_uuid = parts[1], parts[2]
+                    key = S3_KEY_RECORDING.format(timestamp=file_timestamp, uuid=file_uuid)
 
                     if self._provider.upload(str(wav_path), key):
                         logger.info(f"✅ Retry Success: {wav_path.name}")
@@ -294,4 +313,4 @@ class CloudUploaderService:
         lines.append(f"⏱️ Duration: {event['duration_sec']:.1f}s")
 
         msg = "\n".join(lines)
-        self._telegram.send_message_sync(msg, stop_event=self._stop_event)
+        self._telegram.send_message_sync(msg)

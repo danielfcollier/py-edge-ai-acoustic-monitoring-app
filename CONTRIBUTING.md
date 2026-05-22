@@ -1,105 +1,196 @@
-# Contributing to py-edge-ai-acoustic-monitoring-app
+# Contributing to AI Acoustic Monitor
 
-Thank you for your interest in contributing to the **py-edge-ai-acoustic-monitoring-app**! I welcome contributions to help improve this acoustic monitoring app.
+This guide covers development setup, project structure, the testing workflow, and the release process.
 
-This guide will help you set up your development environment and understand the workflows.
 
-## 🛠️ Prerequisites
+## Prerequisites
 
-Before you begin, ensure you have the following installed on your system:
+- **Python 3.11** — [Download](https://www.python.org/downloads/)
+- **uv** — fast Python package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Make** — pre-installed on Linux/macOS
+- **libportaudio2**, **libsndfile1** — installed automatically by `make setup`
 
-* **Python 3.12+**: [Download Python](https://www.python.org/downloads/)
-* **uv**: An extremely fast Python package installer and resolver.
-    * [Installation Guide for uv](https://github.com/astral-sh/uv) (e.g., `curl -LsSf https://astral.sh/uv/install.sh | sh`)
-* **Make**: Standard build tool (usually pre-installed on Linux/macOS).
 
-## 🚀 Setup
+## Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git)
-    cd py-edge-ai-acoustic-monitoring-app
-    ```
+```bash
+git clone https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app.git
+cd py-edge-ai-acoustic-monitoring-app
 
-2.  **Install dependencies:**
-    It's used `uv` to manage the virtual environment and dependencies efficiently. The `make install` command handles everything for you (syncing both production and development dependencies).
-    ```bash
-    make install
-    ```
-    *This creates a virtual environment in `.venv/`.*
+# Install system audio libraries + Python deps in .venv (Python 3.11)
+make install
 
-3.  **Activate the environment:**
-    ```bash
-    source .venv/bin/activate
-    ```
+# Download YAMNet TFLite model and class map
+make setup-models
+```
 
-## 💻 Development Workflow
+To run the app in development:
 
-Use a `Makefile` to streamline common development tasks.
+```bash
+make run               # auto-detect microphone
+make run-default       # force default PC microphone
+make list-devices      # print available audio input devices
+```
 
-### Code Quality & Linting
-Enforce strict code quality standards using **Ruff** (for linting and formatting) and **MyPy** (for static type checking).
+## Architecture
 
-* **Run Linter:** Checks for style violations and potential errors.
-    ```bash
-    make lint
-    ```
-* **Format Code:** Automatically fixes formatting issues.
-    ```bash
-    make format
-    ```
-* **Spell Check:** Checks for spelling errors in code and documentation.
-    ```bash
-    make spell-check
-    ```
+```
+Audio Source  (microphone via umik-base-app AudioPipeline)
+  ├─ CalibratorAdapter      (FIR + sensitivity gain — if calibration file configured)
+  ├─ BasicMetricsSink       (RMS, Flux, dBSPL → context.metrics)
+  ├─ SADGatewaySink         (two-stage noise gate — drops silent frames before AI)
+  ├─ FeatureExtractorSink   (YAMNet inference → context.current_event_label)
+  ├─ PolicyEngineSink       (evaluate YAML rules → context.actions_to_take)
+  └─ SmartBufferSink        (state-machine recorder → raw_queue)
+         │
+    raw_queue
+         │
+  RecorderTransformerWorker (optional FIR calibration → upload_queue)
+         │
+    upload_queue
+         │
+  CloudUploaderService      (stream WAV + CSV to cloud storage)
 
-### Testing
-Use `pytest` for unit testing.
+Background services:
+  TelegramCommandReceiver   (/privacy, /status commands)
+  SystemHeartbeatService    (GPIO blink + healthchecks.io ping)
+  HealthMonitorService      (system metrics CSV)
+```
 
-* **Run Unit Tests:**
-    ```bash
-    make test
-    ```
-* **Run Tests with Coverage Report:**
-    This generates a coverage report to help identify untested code paths.
-    ```bash
-    make coverage
-    ```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams.
 
-### Running the Basic Applications
-You can run the built-in applications directly using `make` targets.
 
-* **Decibel Meter:** Runs the real-time decibel meter app.
-    ```bash
-    # Run with default settings (uses default mic)
-    make decibel-meter-default-mic
-    
-    # Run specifically with a UMIK-1 (requires calibration file path in F variable)
-    make decibel-meter-umik-1 F="path/to/calib.txt"
-    ```
+## Project Structure
 
-* **Audio Recorder:** Runs the recording utility.
-    ```bash
-    # Record with default mic
-    make record-default-mic
-    
-    # Record with UMIK-1 (requires calibration file)
-    make record-umik-1 F="path/to/calib.txt"
-    ```
+```
+src/
+  app/
+    sinks/            # Real-time pipeline stages (AudioSink implementations)
+      basic_metrics_sink.py       # RMS, Flux, dBSPL
+      sad_gateway_sink.py         # Two-stage noise gate
+      feature_extractor_sink.py   # YAMNet inference
+      policy_engine_sink.py       # YAML rule evaluation
+      smart_buffer_sink.py        # State-machine audio recorder
+    services/         # Background workers and integrations
+      telegram_bot_client.py
+      telegram_command_receiver.py
+      cloud_uploader_service.py
+      recorder_transformer_worker.py
+      system_heartbeat_service.py
+    context.py        # PipelineContext — shared state bus between all sinks
+    settings.py       # Pydantic settings + YAML policy loader
+    main.py           # Entry point — builds pipeline and starts services
+  scripts/
+    configure.py      # ai-acoustic-monitor wizard (credentials, profile, manual)
+    install_services.py  # ai-acoustic-monitor-install-service systemd installer
+    setup_yamnet.py   # ai-acoustic-monitor-setup-models model downloader
+    generate_report.py
+  setup/
+    ai-acoustic-monitor.service    # systemd unit templates
+    ai-acoustic-monitor-producer.service
+    ai-acoustic-monitor-consumer.service
 
-*(Note: Use `make help` to see all available commands).*
+tests/
+  sinks/
+  services/
+  e2e/               # Live-API tests (require credentials in .env)
 
-## 🏗️ Project Structure & Standards
+docs/
+  user_manual/       # Profile YAMLs + USER_MANUAL.md
+  roadmap/
+  grafana/
 
-* **Strict Typing:** Enforce static typing throughout the codebase using `mypy`. Please ensure all new functions and classes have type hints.
-* **Formatting:** All code must be formatted with `ruff`. The CI pipeline will fail if code is not properly formatted.
-* **CI Pipeline:** Every Pull Request runs the `make lint` and `make coverage` targets via GitHub Actions. Ensure these pass locally before submitting your PR.
+pyproject.toml       # Project metadata + tool config (ruff, mypy, pytest)
+setup.py             # stdeb packaging entry points and data_files
+build_deb.sh         # .deb build script
+publish_repo.py      # APT repository publisher (S3-compatible)
+```
 
-## 📝 Submitting a Pull Request
 
-1.  Create a new branch for your feature or fix (`git checkout -b feature/my-new-feature`).
-2.  Commit your changes (`git commit -am 'Add some feature'`).
-3.  Push to the branch (`git push origin feature/my-new-feature`).
-4.  Open a Pull Request against the `main` branch.
+## Code Quality
 
-Happy Coding! 🎧
+```bash
+make lint        # Ruff — check for style violations
+make format      # Ruff — autoformat + fix imports
+make check       # lint + test in one step
+```
+
+All code targets Python 3.11 with `line-length = 120`.
+
+**Standards:**
+- Type hints on all public functions and class methods
+- No comments unless the *why* is non-obvious (hidden constraint, subtle invariant, workaround)
+- No module-level magic constants — config values belong in `settings.py`
+- Sentinel values in tests for arbitrary pass-through data; real values where arithmetic or branches depend on them
+
+
+## Testing
+
+```bash
+make test            # pytest unit tests (excludes e2e)
+make test-e2e        # e2e tests — requires credentials in .env
+make coverage        # pytest with term + HTML coverage report (saved to reports/)
+```
+
+Tests mirror `src/app/` under `tests/`. When mocking `settings`, always provide concrete values for any field the code under test performs arithmetic or comparison on — returning a `MagicMock` where an `int` is expected will cause silent `TypeError`.
+
+
+## Version & Release
+
+### Bumping the version
+
+Version is tracked in `pyproject.toml` and `src/app/__init__.py`. Use the Makefile targets to keep them in sync:
+
+```bash
+make bump-patch    # 0.1.0 → 0.1.1
+make bump-minor    # 0.1.0 → 0.2.0
+make bump-major    # 0.1.0 → 1.0.0
+```
+
+### Building the .deb package
+
+The package vendors all Python dependencies so the installed system only needs `python3.11 + libportaudio2 + libsndfile1`.
+
+```bash
+make build-deb     # clean → vendor deps → build .deb (output: deb_dist/*.deb)
+make test-deb      # verify the package in a clean Docker container (DISTRO=bookworm|noble)
+```
+
+`build_deb.sh` patches the generated `debian/control` to strip Python package dependencies (vendored), fixes the Python 3.11 shebang in entry points via `postinst`, and validates that key entry points and data files are present in the archive.
+
+### Publishing to the APT repository (Magalu Cloud)
+
+```bash
+# One-time: add to .env
+DEB_S3_BUCKET=your-bucket-name
+GPG_KEY_ID=your-gpg-fingerprint
+GPG_KEY_FILE=ai-acoustic-monitor.gpg.key
+GPG_PUBKEY_FILE=ai-acoustic-monitor.gpg.pub
+
+# Publish a built .deb
+make publish-deb BUCKET=your-bucket-name
+
+# Or run the full release in one step (bump + build + publish)
+make release                        # defaults to patch bump
+make release VERSION_BUMP=minor
+```
+
+`publish_repo.py` builds a fully compliant Debian repository layout (pool, dists, Packages.gz, Release, InRelease, Release.gpg) in the S3 bucket. The script is idempotent — re-publishing the same version is a no-op.
+
+**GPG key setup (one-time):**
+
+```bash
+gpg --full-generate-key
+gpg --armor --export <KEY_ID> > ai-acoustic-monitor.gpg.pub
+gpg --armor --export-secret-keys <KEY_ID> > ai-acoustic-monitor.gpg.key
+```
+
+
+## Submitting a Pull Request
+
+1. Branch: `git checkout -b feat/my-feature`
+2. Keep commits focused; one logical change per commit
+3. `make check` must pass (lint + tests)
+4. Open a PR against `main`
+
+Happy coding! 🎧

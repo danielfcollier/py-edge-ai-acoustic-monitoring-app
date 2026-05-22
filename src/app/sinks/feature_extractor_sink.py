@@ -1,8 +1,8 @@
 """
 Feature Extractor Sink.
-Analysis Stage: Calculates Physics (RMS, Flux, dBSPL) and AI (Yamnet) metrics.
-Populates the PipelineContext for the Policy Engine.
-Implements a Two-Stage SAD (Sound Activity Detection) for CPU efficiency.
+AI inference stage: runs YAMNet on buffered audio and populates
+context.current_event_label and context.current_confidence.
+Only runs when context.should_infer is True (set by SADGatewaySink).
 
 Author: Daniel Collier
 GitHub: https://github.com/danielfcollier
@@ -15,8 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import resampy
-from umik_base_app import AudioSink
-from umik_base_app.core.audio_metrics import AudioMetrics
+from umik_base_app import AudioSink, PipelineContext as AudioCtx
 
 from ..context import PipelineContext
 from ..services.prometheus_service import PrometheusService
@@ -25,273 +24,164 @@ from ..settings import FeatureExtractorConfig, settings
 logger = logging.getLogger(__name__)
 
 
-DBSPL_SILENCE_LEVEL = 30.0
-
-
 class FeatureExtractorSink(AudioSink):
-    """
-    The "Senses" of the application.
-    1. Physics: Calculates real-world loudness (dBSPL) and texture (Flux).
-    2. Intelligence: Classifies audio using YAMNet (AI).
-    3. Gate: Filters out silence (SAD) to save CPU.
-    """
+    """Classifies audio using YAMNet. Gated by context.should_infer."""
 
     def __init__(self, context: PipelineContext):
-        """
-        Initializes the Feature Extractor.
-
-        :param context: The shared PipelineContext to update with metrics/inference.
-        """
         self._context = context
         self._config: FeatureExtractorConfig = settings.CONFIG.feature_extractor
-
-        # Services & Resources
         self._metrics = PrometheusService()
         self._classes = []
-        self._model = None
+        self._excluded_indices = []
 
-        # Audio Configuration
         self._input_sr = int(settings.AUDIO.SAMPLE_RATE)
         self._target_sr = self._config.target_sample_rate
         self._model_input_size = self._config.model_input_size
         self._raw_buffer = []
 
-        # Constants from Settings
         self._logging_threshold = self._config.logging_confidence_threshold
+        self._linear_gain: float | None = None
 
-        # SAD Thresholds
-        self._sad_threshold_rms = self._config.sad_threshold_rms
-        self._sad_threshold_flux = self._config.sad_threshold_flux
-        self._sad_threshold_dbspl = self._config.sad_threshold_dbspl
-
-        # Calibration Data (Safe access)
-        self._mic_sensitivity = getattr(settings.HARDWARE, "NOMINAL_SENSITIVITY_DBFS", None)
-        self._ref_dbspl = getattr(settings.HARDWARE, "REFERENCE_DBSPL", None)
-
-        # Setup
         self._load_classes()
+        self._resolve_excluded_indices()
 
         if not self._model_exists():
             logger.info("⬇️ First run detected. Downloading YAMNet models...")
             self._download_models()
 
-        if self._config.use_tflite:
-            self._init_tflite()
-        else:
-            self._init_tensorflow()
+        self._init_onnx()
 
-        logger.info(
-            f"📌 Feature Extractor Ready. Input: {self._input_sr}Hz -> Model: {self._target_sr}Hz. "
-            f"SAD Gate: [RMS>{self._sad_threshold_rms} | Flux>{self._sad_threshold_flux}] "
-            f"-> [dBSPL>{self._sad_threshold_dbspl} (If Calibrated)]"
-        )
+        logger.info(f"📌 Feature Extractor Ready. Input: {self._input_sr}Hz -> Model: {self._target_sr}Hz")
 
     def _model_exists(self) -> bool:
-        """Checks if the configured model file exists."""
-        if self._config.use_tflite:
-            return Path(self._config.model_path_lite).exists()
-        return Path(self._config.model_path_full).exists()
+        return Path(self._config.model_path).exists()
 
     def _download_models(self):
-        """Triggers the setup script to fetch assets."""
         from scripts import setup_models
 
         setup_models.main()
 
     def _load_classes(self):
-        """Loads the YAMNet class map CSV."""
         csv_path = self._config.class_map_path
         if not Path(csv_path).exists():
-            error = f"Class map not found at {csv_path}."
-            logger.error(error)
-            raise FileNotFoundError(error)
-
+            raise FileNotFoundError(f"Class map not found at {csv_path}.")
         try:
             with open(csv_path) as f:
-                reader = csv.DictReader(f)
-                for row in reader:
+                for row in csv.DictReader(f):
                     self._classes.append(row["display_name"])
             logger.info(f"Loaded {len(self._classes)} classes.")
         except Exception as e:
-            error = f"Failed to load class map: {e}"
-            logger.error(error)
-            raise FileExistsError(error)
+            raise FileExistsError(f"Failed to load class map: {e}") from e
 
-    def _init_tflite(self):
-        """Initializes the TFLite runtime interpreter."""
+    def _resolve_excluded_indices(self):
+        excluded_names = set(self._config.exclude_classes)
+        self._excluded_indices = [i for i, name in enumerate(self._classes) if name in excluded_names]
+        if self._excluded_indices:
+            logger.info(f"🚫 Exclusion Active. Muting {len(self._excluded_indices)} classes: {list(excluded_names)}")
+
+    def _init_onnx(self):
         try:
-            import tflite_runtime.interpreter as tflite
+            import onnxruntime as ort
         except ImportError:
-            try:
-                import tensorflow.lite as tflite
-            except ImportError:
-                raise ImportError("TFLite runtime not found. Install 'tflite-runtime'.")
+            raise ImportError("onnxruntime not found. Install 'onnxruntime'.")
 
-        model_path = self._config.model_path_lite
+        model_path = self._config.model_path
         if not Path(model_path).exists():
-            raise FileNotFoundError(f"TFLite Model not found at {model_path}")
+            raise FileNotFoundError(f"ONNX model not found at {model_path}")
 
-        logger.info(f"Loading TFLite model: {model_path}")
-        self._interpreter = tflite.Interpreter(model_path=model_path)
-        self._interpreter.allocate_tensors()
+        logger.info(f"Loading ONNX model: {model_path}")
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        self._session = ort.InferenceSession(model_path, sess_options=opts)
+        self._input_name = self._session.get_inputs()[0].name
+        self._output_name = self._session.get_outputs()[0].name
 
-        self._input_details = self._interpreter.get_input_details()
-        self._output_details = self._interpreter.get_output_details()
-        self._output_index = self._output_details[0]["index"]
+    def handle(self, ctx: AudioCtx) -> None:
+        # Lazy-init gain boost from ctx calibration metadata
+        if self._linear_gain is None:
+            if not ctx.gain_applied and ctx.sensitivity_dbfs is not None:
+                self._linear_gain = 10.0 ** (abs(ctx.sensitivity_dbfs) / 20.0)
+                logger.info(
+                    f"🔊 AI Input Gain: Applying {self._linear_gain:.2f}x boost "
+                    f"(based on Sensitivity {ctx.sensitivity_dbfs}dB)"
+                )
+            else:
+                self._linear_gain = 1.0
 
-    def _init_tensorflow(self):
-        """Initializes the standard TensorFlow SavedModel."""
-        try:
-            import tensorflow as tf
-        except ImportError:
-            raise ImportError("TensorFlow not found. Install 'tensorflow'.")
-
-        if self._config.force_cpu:
-            try:
-                gpus = tf.config.list_physical_devices("GPU")
-                if gpus:
-                    tf.config.set_visible_devices([], "GPU")
-                    logger.info("🚫 GPU disabled by configuration (force_cpu=True).")
-            except Exception as e:
-                logger.warning(f"Failed to force CPU mode: {e}")
-
-        model_path = self._config.model_path_full
-        if not Path(model_path).exists():
-            raise FileNotFoundError(f"Full Model not found at {model_path}")
-
-        logger.info(f"Loading Full TensorFlow model: {model_path}")
-        self._tf_model = tf.saved_model.load(model_path)
-
-    def handle_audio(self, audio_chunk: np.ndarray, timestamp) -> None:
-        """
-        Process incoming audio: Physics -> SAD Gate -> AI Inference.
-        """
-        # 1. Update Pre-Roll Buffer (Crucial for evidence recording)
-        self._context.audio_pre_buffer.append(audio_chunk)
-
-        # 2. Stage 1: Basic Physics (Cheap)
-        rms = AudioMetrics.rms(audio_chunk)
-        flux = AudioMetrics.flux(audio_chunk, self._input_sr)
-
-        # Publish basic metrics to Context
-        self._context.metrics["rms"] = rms
-        self._context.metrics["flux"] = flux
-        self._context.metrics["dBSPL"] = 0.0  # Default/Floor
-
-        # SAD Stage 1: Noise Gate
-        # Is it Loud (RMS) OR Sudden (Flux)?
-        is_active = (rms > self._sad_threshold_rms) or (flux > self._sad_threshold_flux)
-
-        if not is_active:
-            self._handle_silence(dbspl_val=DBSPL_SILENCE_LEVEL, rms_val=rms)
+        # SAD gate: SADGatewaySink cleared this frame
+        if not self._context.should_infer:
+            self._raw_buffer = []
             return
 
-        # 3. Stage 2: Precision Physics (Expensive & Calibrated)
-        dBSPL = 0.0
-        if self._mic_sensitivity is not None and self._ref_dbspl is not None:
-            dBFS = AudioMetrics.dBFS(audio_chunk)
-            dBSPL = AudioMetrics.dBSPL(dBFS, self._mic_sensitivity, self._ref_dbspl)
-
-            # SAD Stage 2: SPL Filter
-            if dBSPL < self._sad_threshold_dbspl:
-                self._handle_silence(dbspl_val=dBSPL, rms_val=rms)
-                return
-
-            # Update Context with valid SPL
-            self._context.metrics["dBSPL"] = dBSPL
-        else:
-            # Uncalibrated: Skip SAD Stage 2 and SPL calculation
-            pass
-
-        # 4. Update Prometheus (Active State)
-        self._metrics.update_audio(dBSPL if dBSPL > 0 else DBSPL_SILENCE_LEVEL, rms, flux)
-
-        # 5. Accumulate for AI Inference
-        self._raw_buffer.append(audio_chunk)
+        self._raw_buffer.append(ctx.audio)
         current_size = sum(len(c) for c in self._raw_buffer)
-
-        # Ratio correction for resampling (e.g. 48k -> 16k requires 3x samples)
         samples_needed = int(self._model_input_size * (self._input_sr / self._target_sr))
 
         if current_size >= samples_needed:
             self._process_inference_batch()
 
-    def _handle_silence(self, dbspl_val: float, rms_val: float):
-        """Helper to reset state and update monitors during silence."""
-        # Context
-        self._context.current_event_label = "Silence"
-        self._context.current_confidence = 0.0
-
-        # Buffers
-        self._raw_buffer = []
-
-        # Live Monitors (Needle drops to floor/value)
-        self._metrics.update_audio(dbspl_val, rms_val, 0.0)
-        self._metrics.update_ai_status("Silence", 0.0)
-
     def _process_inference_batch(self):
-        """Runs the AI model on the buffered audio."""
-        # Merge & Resample
         raw_audio = np.concatenate(self._raw_buffer)
         resampled = resampy.resample(raw_audio, self._input_sr, self._target_sr)
-
-        # Strict input size matching
-        if len(resampled) > self._model_input_size:
-            input_data = resampled[: self._model_input_size]
-        else:
-            input_data = np.pad(resampled, (0, self._model_input_size - len(resampled)))
-
-        input_data = input_data.astype(np.float32)
-
-        # Run Inference
-        if self._config.use_tflite:
-            self._predict_tflite(input_data)
-        else:
-            self._predict_tensorflow(input_data)
-
-        # Reset Buffer
         self._raw_buffer = []
 
-    def _predict_tflite(self, input_data):
-        """Runs TFLite inference."""
-        self._interpreter.set_tensor(self._input_details[0]["index"], input_data)
-        self._interpreter.invoke()
-        scores = self._interpreter.get_tensor(self._output_index)[0]
-        self._update_context(scores)
+        stride = self._model_input_size
+        n = len(resampled)
 
-    def _predict_tensorflow(self, input_data):
-        """Runs TensorFlow inference."""
-        import tensorflow as tf
+        if n < stride:
+            windows = [np.pad(resampled, (0, stride - n))]
+        else:
+            windows = [resampled[i : i + stride] for i in range(0, n - stride + 1, stride)]
 
-        input_tensor = tf.convert_to_tensor(input_data, dtype=tf.float32)
-        scores, _, _ = self._tf_model(input_tensor)
+        all_scores = []
+        for window in windows:
+            w = window.astype(np.float32) * self._linear_gain
+            w = np.clip(w, -1.0, 1.0)
+            scores = self._predict_onnx(w)
+            if scores is not None:
+                all_scores.append(scores)
 
-        scores_np = scores.numpy()
-        # Average scores if model returns multiple frames
-        avg_scores = np.mean(scores_np, axis=0)
-        self._update_context(avg_scores)
+        if all_scores:
+            self._update_context(np.mean(all_scores, axis=0))
+
+    def _predict_onnx(self, input_data: np.ndarray) -> np.ndarray:
+        return self._session.run([self._output_name], {self._input_name: input_data})[0][0]
 
     def _update_context(self, scores):
-        """Updates Context and Metrics Service with AI results."""
+        if self._excluded_indices:
+            scores[self._excluded_indices] = 0.0
+
         prediction_index = scores.argmax()
         label = self._classes[prediction_index] if prediction_index < len(self._classes) else "Unknown"
         confidence = float(scores[prediction_index])
 
-        # Update Pipeline Context
+        # Debug: Top 5
+        sorted_indices = np.argsort(scores)[::-1]
+        debug_parts = ["🔍 YAMNet Top 5:"]
+        count = 0
+        for idx in sorted_indices:
+            if count >= 5:
+                break
+            if idx in self._excluded_indices:
+                continue
+            cls_name = self._classes[idx] if idx < len(self._classes) else "Unknown"
+            debug_parts.append(f"[{cls_name}: {scores[idx]:.2f}]")
+            count += 1
+        logger.debug(" ".join(debug_parts))
+
         self._context.current_event_label = label
         self._context.current_confidence = confidence
-
-        # Update Live Status Gauge (Not Counter!)
         self._metrics.update_ai_status(label, confidence)
 
         if confidence > self._logging_threshold:
-            rms = self._context.metrics["rms"]
-            flux = self._context.metrics["flux"]
-            dBSPL = self._context.metrics["dBSPL"]
+            rms = self._context.metrics.get("rms", 0.0)
+            flux = self._context.metrics.get("flux", 0.0)
+            dbspl = self._context.metrics.get("dbspl", 0.0)
 
-            if dBSPL > 0:
+            if dbspl > 0:
                 logger.info(
-                    f"rms={rms:.4f} flux={flux:05.1f} dBSPL={dBSPL:05.1f} | 👂 Heard: {label} ({confidence:.2f})"
+                    f"rms={rms:.4f} flux={flux:05.1f} dBSPL={dbspl:05.1f} | 👂 Heard: {label} ({confidence:.2f})"
                 )
             else:
                 logger.info(f"rms={rms:.4f} flux={flux:05.1f} | 👂 Heard: {label} ({confidence:.2f})")

@@ -109,8 +109,7 @@ class PolicyRule(BaseModel):
 
 
 class FeatureExtractorConfig(BaseModel):
-    use_tflite: bool = True
-    model_path_lite: str = "src/yamnet/yamnet.tflite"
+    model_path: str = "src/yamnet/yamnet.onnx"
     model_path_full: str = "src/yamnet/model"
     class_map_path: str = "src/yamnet/class_map/yamnet_class_map.csv"
 
@@ -127,19 +126,31 @@ class FeatureExtractorConfig(BaseModel):
     sad_threshold_flux: float = 5.0
     sad_threshold_dbspl: float = 45.0
 
+    exclude_classes: list[str] = Field(
+        default_factory=lambda: [
+            "Silence",
+            "Inside, small room",
+            "Wind",
+            "Wind noise",
+            "White noise",
+            "Mouse",
+            "Mechanical fan",
+            "Camera",
+            "Outside, rural or natural",
+            "Mechanisms",
+            "Sound Effect",
+            "Rustling leaves",
+        ]
+    )
+
 
 class CloudConfig(BaseModel):
     provider: Literal["magalu", "aws", "gcp"] = "magalu"
     bucket_name: str = "acoustic-logs"
-
-    # S3 / Magalu / AWS Credentials
-    aws_access_key: str | None = Field(None, alias="AWS_ACCESS_KEY_ID")
-    aws_secret_key: str | None = Field(None, alias="AWS_SECRET_ACCESS_KEY")
-    aws_region: str | None = Field("us-east-1", alias="AWS_REGION")
-    s3_endpoint: str | None = None  # For Magalu/MinIO
-
-    # GCP Credentials
-    gcp_credentials_path: str | None = Field(None, alias="GOOGLE_APPLICATION_CREDENTIALS")
+    # Magalu: "br-se1" | "br-ne1"   AWS: "us-east-1" | "sa-east-1" | ...
+    region: str = "br-se1"
+    # GCP only: path to service account JSON. Falls back to GOOGLE_APPLICATION_CREDENTIALS env var.
+    gcp_credentials_path: str | None = None
 
 
 class ServiceConfig(BaseModel):
@@ -154,9 +165,21 @@ class ServiceConfig(BaseModel):
     # 🆕 Storage Path (Default: ./recordings)
     recording_output_path: Path = Path("recordings")
 
+    # Privacy mode state file (shared memory, cleared on reboot)
+    privacy_mode_state_file: Path = Path("/dev/shm/privacy_mode")
+
+    # Queue / Pipeline
+    max_pending_uploads: int = 50
+    recording_max_seconds: int = 60
+    recording_pre_roll_seconds: int = 5
+    recording_post_roll_seconds: int = 10
+    metrics_csv_buffer_file: str = "metrics_buffer.csv"
+    dbspl_silence_level: float = 30.0  # Prometheus floor when mic is uncalibrated
+
     # Operational Settings
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
+    heartbeat_enabled: bool = True
     heartbeat_interval_seconds: int = 60
     alert_cooldown_seconds: int = 60
 
@@ -168,9 +191,14 @@ class ServiceConfig(BaseModel):
     gpio_heartbeat_pin: int = 17
     hc_ping_url: str | None = None
 
+    # Prometheus metrics server
+    prometheus_enabled: bool = True
+    prometheus_port: int = 8000
+
 
 class HardwareConfig(BaseModel):
     calibration_file: str | None = None
+    fir_num_taps: int = 1024
 
 
 class AppConfig(BaseModel):
@@ -197,12 +225,13 @@ class AppSettings(BaseSettings):
     MAGALU_ACCESS_KEY: str | None = Field(None, alias="MAGALU_KEY")
     MAGALU_SECRET_KEY: str | None = Field(None, alias="MAGALU_SECRET")
     MAGALU_BUCKET: str = "acoustic-logs"
+    MAGALU_URL: str | None = None  # explicit endpoint override; derived from region when absent
 
     # --- Logging Levels (Controlled via .env) ---
     LOG_LEVEL_MAIN: str = "INFO"
-    LOG_LEVEL_POLICY_ENGINE: str = "DEBUG"
-    LOG_LEVEL_FEATURE_EXTRACTOR: str = "DEBUG"
-    LOG_LEVEL_SMART_RECORDER: str = "DEBUG"
+    LOG_LEVEL_POLICY_ENGINE: str = "INFO"
+    LOG_LEVEL_FEATURE_EXTRACTOR: str = "INFO"
+    LOG_LEVEL_SMART_RECORDER: str = "INFO"
     LOG_LEVEL_TELEGRAM: str = "INFO"
     LOG_LEVEL_SERVICES: str = "INFO"
 
@@ -267,6 +296,10 @@ class AppSettings(BaseSettings):
                 logger.warning(f"⚠️ WARNING: Calibration file at '{cal_path}' does not exist! App may crash.")
 
             base_args.calibration_file = cal_path
+        else:
+            # v0.6.0 auto-discovers calibration files from ~/.config/audio-tools/ when
+            # calibration_file is None. Suppress that — YAML config is the source of truth.
+            base_args.default = True
 
     def _apply_logging_config(self):
         """Sets log levels based on .env variables defined in this class."""
