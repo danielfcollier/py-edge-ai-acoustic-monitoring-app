@@ -41,6 +41,7 @@ class FeatureExtractorSink(AudioSink):
 
         self._logging_threshold = self._config.logging_confidence_threshold
         self._linear_gain: float | None = None
+        self._last_logged_label: str = ""
 
         self._load_classes()
         self._resolve_excluded_indices()
@@ -173,7 +174,7 @@ class FeatureExtractorSink(AudioSink):
         self._context.top_classes = top5
         self._metrics.update_ai_status(label, confidence)
 
-        if confidence > self._logging_threshold:
+        if confidence > self._logging_threshold and label != self._last_logged_label:
             rms = self._context.metrics.get("rms", 0.0)
             flux = self._context.metrics.get("flux", 0.0)
             dbspl = self._context.metrics.get("dbspl", 0.0)
@@ -184,3 +185,4 @@ class FeatureExtractorSink(AudioSink):
                 )
             else:
                 logger.info(f"rms={rms:.4f} flux={flux:05.1f} | 👂 Heard: {label} ({confidence:.2f})")
+            self._last_logged_label = label
