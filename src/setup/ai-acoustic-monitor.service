@@ -13,9 +13,8 @@ WorkingDirectory={working_dir}
 Environment="PATH={venv_bin}:$PATH"
 Environment="TF_CPP_MIN_LOG_LEVEL=3"
 
-# Command (Assumes 'edge-monitor' is installed in the venv)
-# We pass explicit paths to the config files in /etc/edge-monitor or ~/.config
-ExecStart={venv_bin}/edge-monitor --config {config_path} --env {env_path}
+# We pass explicit paths to the config files in /etc/ai-acoustic-monitor or ~/.config
+ExecStart={venv_bin}/ai-acoustic-monitor-run --config {config_path} --env {env_path}
 
 # --- Audio Performance Tuning ---
 # 'fifo' is Real-Time scheduling (better than 'nice')

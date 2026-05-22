@@ -1,0 +1,260 @@
+# 🏠 Home Security & Peace (Home Mode)
+#
+# All rules run simultaneously. Covers:
+#   - Intrusions & suspicious night activity
+#   - Dog barking
+#   - Music instruments (quiet hours alert / daytime log)
+#   - Night & early morning disturbances (screams, loud music, crowds)
+#
+# ⚠️  VOICE RECORDING NOTICE
+#     This profile does NOT record conversations or speech.
+#     The following YAMNet labels are intentionally absent from every policy:
+#       Speech, Child speech, Narration, Conversation, Hubbub (except Crowd Noise
+#       policy where it acts as a party-level noise indicator, not speech content).
+#     Raised voices are detected only via Screaming, Yell, Shout, and Children
+#     shouting — labels that represent distress or aggression, not normal talk.
+
+variables:
+  day_start: 6
+  night_start: 22
+  day_limit: 55.0
+  night_limit: 45.0
+  calibration_file_path: "src/umik-1/7175488.txt"
+
+hardware:
+  calibration_file: "{calibration_file_path}"
+
+services:
+  internet_enabled: true
+  heartbeat_enabled: true
+  telegram_enabled: true
+  cloud_storage_enabled: true
+  recording_output_path: "recordings"
+  heartbeat_interval_seconds: 60
+  gpio_heartbeat_pin: 17
+  hc_ping_url: "{HC_PING_URL}"
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  alert_cooldown_seconds: 60
+  day_start_hour: "{day_start}"
+  night_start_hour: "{night_start}"
+  cloud:
+    provider: "magalu"
+    bucket_name: "{MAGALU_BUCKET}"
+
+feature_extractor:
+  model_path: "src/yamnet/yamnet.onnx"
+  sad_threshold_rms: 0.002
+  sad_threshold_flux: 1.5
+  sad_threshold_dbspl: 50.0
+  exclude_classes:
+    # Background / ambient noise — would produce false positives
+    - "Silence"
+    - "Inside, small room"
+    - "Wind"
+    - "Wind noise"
+    - "White noise"
+    - "Mouse"
+    - "Mechanical fan"
+    - "Camera"
+    - "Outside, rural or natural"
+    - "Mechanisms"
+    - "Sound Effect"
+    - "Rustling leaves"
+    # Voice recording exclusions — scores zeroed at model level so these labels
+    # can never become the top prediction and never trigger any policy.
+    - "Speech"
+    - "Child speech, kid speaking"
+    - "Narration, monologue"
+    - "Conversation"
+    - "Speech synthesizer"
+
+reporting:
+  days_to_report: 30
+  limits:
+    day_db: "{day_limit}"
+    night_db: "{night_limit}"
+  category_mapping:
+    "Glass": "Security"
+    "Shatter": "Security"
+    "Breaking": "Security"
+    "Smash, crash": "Security"
+    "Gunshot, gunfire": "Security"
+    "Explosion": "Security"
+    "Bang": "Security"
+    "Knock": "Security"
+    "Door": "Security"
+    "Walk, footsteps": "Security"
+    "Dog": "Dog Barking"
+    "Bark": "Dog Barking"
+    "Howl": "Dog Barking"
+    "Whimper": "Dog Barking"
+    "Musical instrument": "Instruments"
+    "Guitar": "Instruments"
+    "Piano": "Instruments"
+    "Drum": "Instruments"
+    "Drum kit": "Instruments"
+    "Violin, fiddle": "Instruments"
+    "Flute": "Instruments"
+    "Trumpet": "Instruments"
+    "Saxophone": "Instruments"
+    "Singing": "Instruments"
+    "Music": "Music"
+    "Dance music": "Music"
+    "Rock music": "Music"
+    "Electronic dance music": "Music"
+    "Screaming": "Disturbance"
+    "Yell": "Disturbance"
+    "Shout": "Disturbance"
+    "Children shouting": "Disturbance"
+    "Crowd": "Disturbance"
+
+policies:
+  # ---------------------------------------------------------------------------
+  # INTRUSIONS — fires any hour, ignores privacy mode
+  # ---------------------------------------------------------------------------
+
+  - name: "Critical Intrusion"
+    description: "Break-in and weapon sounds — immediate alert regardless of privacy mode."
+    condition: >
+      current_event_label in [
+        'Glass', 'Shatter', 'Breaking', 'Smash, crash',
+        'Gunshot, gunfire', 'Machine gun', 'Cap gun',
+        'Explosion', 'Bang'
+      ] and current_confidence > 0.3
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Suspicious Activity (Night)"
+    description: "Knocks, door movements, and footsteps during sleeping hours."
+    condition: >
+      current_event_label in [
+        'Knock', 'Door', 'Sliding door', 'Walk, footsteps'
+      ] and current_confidence > 0.3 and is_night
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+
+  # ---------------------------------------------------------------------------
+  # DOG BARKING — fires any hour, ignores privacy mode
+  # ---------------------------------------------------------------------------
+
+  - name: "Dog Barking"
+    description: "Records and alerts on dog vocalizations for noise logs and dispute evidence."
+    condition: >
+      current_event_label in [
+        'Dog', 'Bark', 'Howl',
+        'Whimper', 'Whimper (dog)',
+        'Canidae, dogs, wolves'
+      ] and current_confidence > 0.3
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  # ---------------------------------------------------------------------------
+  # MUSIC INSTRUMENTS — alert during quiet hours, silent log during the day
+  # ---------------------------------------------------------------------------
+
+  - name: "Instruments (Quiet Hours)"
+    description: "Alert and record instrument playing at night or before 08:00."
+    condition: >
+      current_event_label in [
+        'Musical instrument',
+        'Guitar', 'Acoustic guitar', 'Electric guitar', 'Bass guitar',
+        'Steel guitar, slide guitar', 'Plucked string instrument',
+        'Piano', 'Electric piano', 'Keyboard (musical)',
+        'Drum', 'Drum kit', 'Drum machine', 'Drum roll', 'Snare drum', 'Bass drum',
+        'Violin, fiddle', 'Cello', 'Bowed string instrument',
+        'Flute', 'Trumpet', 'Saxophone',
+        'Brass instrument', 'Wind instrument, woodwind instrument',
+        'Singing', 'Child singing', 'Vocal music'
+      ] and current_confidence > 0.3 and (is_night or current_hour < 8)
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  - name: "Instruments (Daytime Log)"
+    description: "Silent evidence log of daytime instrument playing — no alert to avoid spam."
+    condition: >
+      current_event_label in [
+        'Musical instrument',
+        'Guitar', 'Acoustic guitar', 'Electric guitar', 'Bass guitar',
+        'Steel guitar, slide guitar', 'Plucked string instrument',
+        'Piano', 'Electric piano', 'Keyboard (musical)',
+        'Drum', 'Drum kit', 'Drum machine', 'Drum roll', 'Snare drum', 'Bass drum',
+        'Violin, fiddle', 'Cello', 'Bowed string instrument',
+        'Flute', 'Trumpet', 'Saxophone',
+        'Brass instrument', 'Wind instrument, woodwind instrument',
+        'Singing', 'Child singing', 'Vocal music'
+      ] and current_confidence > 0.3 and is_day and current_hour >= 8
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "cloud_upload"
+    ignore_privacy: true
+
+  # ---------------------------------------------------------------------------
+  # NIGHT & EARLY MORNING DISTURBANCES — active 22:00–08:00
+  # Raised voices captured via Yell/Shout/Screaming (not Speech/Conversation).
+  # ---------------------------------------------------------------------------
+
+  - name: "Screams & Distress (Night)"
+    description: "Screaming, yelling, or crying during quiet hours — possible distress or aggression."
+    condition: >
+      current_event_label in [
+        'Screaming', 'Yell', 'Shout',
+        'Children shouting',
+        'Crying, sobbing'
+      ] and current_confidence > 0.3 and (is_night or current_hour < 8)
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+
+  - name: "Loud Music (Night)"
+    description: "Music playing at night or before 08:00."
+    condition: >
+      current_event_label in [
+        'Music', 'Dance music', 'Electronic dance music',
+        'Rock music', 'Hip hop music', 'Pop music',
+        'Drum and bass', 'House music', 'Electronic music',
+        'Ambient music', 'Angry music'
+      ] and current_confidence > 0.3 and (is_night or current_hour < 8)
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+
+  - name: "Crowd Noise (Night)"
+    description: "Crowd or party noise during quiet hours."
+    condition: >
+      current_event_label in ['Crowd', 'Hubbub, speech noise, speech babble']
+      and current_confidence > 0.3 and (is_night or current_hour < 8)
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+
+  - name: "Loud dB Threshold (Night)"
+    description: "Physics fallback — any sustained loud sound above 50 dB during quiet hours."
+    condition: "metrics['dbspl'] > 50.0 and (is_night or current_hour < 8)"
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
