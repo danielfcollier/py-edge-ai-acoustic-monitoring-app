@@ -1,0 +1,17 @@
+include pyproject.toml
+include stdeb.cfg
+include setup.py
+include README.md
+
+recursive-include src/app *
+recursive-include src/scripts *
+recursive-include src/setup *
+
+recursive-include src/app/vendor *
+
+recursive-include docs/user_manual *.yaml
+include docs/user_manual/USER_MANUAL.md
+
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store

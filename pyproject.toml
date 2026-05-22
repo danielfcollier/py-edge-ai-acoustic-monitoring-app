@@ -1,7 +1,7 @@
 [project]
-name = "edge-ai-acoustic-monitoring-app"
-version = "0.1.0"
-description = "Edge AI Acoustic Monitoring App"
+name = "ai-acoustic-monitoring-app"
+version = "0.2.0"
+description = "AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
 ]
@@ -9,13 +9,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "umik-base-app>=0.4.3a1.dev0",
+    "umik-base-app>=0.6.0",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
-    "tensorflow>=2.16.0",
-    "tflite-runtime>=2.14.0",
-    "tensorflow-hub>=0.16.1",
+    "onnxruntime>=1.19.0",
+    "numpy>=1.23.0,<2",
     "rule-engine>=4.5.3",
     "pyyaml>=6.0.3",
     "boto3>=1.42.19",
@@ -34,22 +33,34 @@ dependencies = [
 "Bug Tracker" = "https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/issues"
 
 [project.scripts]
-edge-monitor-run = "app.main:main"
-edge-monitor-setup-models = "scripts.setup_yamnet:main"
-edge-monitor-install-service = "scripts.install_service:main"
+ai-acoustic-monitor-run = "app.main:main"
+ai-acoustic-monitor = "scripts.configure:main"
+ai-acoustic-monitor-setup-models = "scripts.setup_yamnet:main"
+ai-acoustic-monitor-install-service = "scripts.install_services:main"
 
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app", "src/scripts"]
+
+[tool.setuptools]
+packages = { find = { where = ["src"], include = ["app*", "scripts*"] } }
+
+[tool.setuptools.package-data]
+"*" = ["*.sh", "*.yaml", "*.service", "*.txt"]
 
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q"
-testpaths = [
-    "tests",
+addopts = "-ra -q -m 'not e2e' --import-mode=importlib"
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+markers = [
+    "e2e: end-to-end tests that hit live external APIs (require credentials in .env)",
+    "heartbeat: heartbeat and health-monitoring e2e tests (skipped from the default test-e2e run)",
 ]
-pythonpath = "."
 
 [tool.ruff]
 line-length = 120
@@ -89,10 +100,21 @@ analysis = [
     "tabulate>=0.9.0",
     "weasyprint>=67.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "ruff~=0.14.1",
     "mypy~=1.18.2",
     "pytest>=9.0.2",
+    "stdeb>=0.11.0",
+    "setuptools>=80.0",
+]
+publish = [
+    "boto3>=1.35",
+    "python-debian>=0.1.49",
+    "python-gnupg>=0.5",
+]
+
+[project.optional-dependencies]
+full = [
+    "tensorflow>=2.16.0",
+    "tensorflow-hub>=0.16.1",
 ]

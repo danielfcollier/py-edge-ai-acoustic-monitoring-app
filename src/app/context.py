@@ -34,3 +34,6 @@ class PipelineContext:
     # --- Policy Decisions ---
     # e.g. ["cloud_upload", "record_evidence", "blink_led"]
     actions_to_take: list[str] = field(default_factory=list)
+
+    # --- Recording State ---
+    is_recording: bool = False

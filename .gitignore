@@ -38,6 +38,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
+reports/
 .tox/
 .nox/
 .coverage
@@ -207,3 +208,9 @@ marimo/_lsp/
 __marimo__/
 
 recordings/
+recordings_old/
+test-recordings/
+src/app/vendor/
+deb_dist/
+ai_acoustic_monitoring_app-*
+*gpg.key
