@@ -3,16 +3,16 @@
 # All rules run simultaneously. Covers:
 #   - Intrusions & suspicious night activity
 #   - Dog barking
-#   - Music instruments (quiet hours alert / daytime log)
+#   - Music instruments (quiet hours alert)
 #   - Night & early morning disturbances (screams, loud music, crowds)
 #
 # ⚠️  VOICE RECORDING NOTICE
-#     This profile does NOT record conversations or speech.
-#     The following YAMNet labels are intentionally absent from every policy:
-#       Speech, Child speech, Narration, Conversation, Hubbub (except Crowd Noise
-#       policy where it acts as a party-level noise indicator, not speech content).
-#     Raised voices are detected only via Screaming, Yell, Shout, and Children
-#     shouting — labels that represent distress or aggression, not normal talk.
+#     Quiet speech and narration are suppressed at the model level (Speech,
+#     Child speech, Narration labels excluded). However, chattering and
+#     unclear conversation noise CAN be recorded as neighbourhood disturbance
+#     evidence via the Crowd Noise policy (Hubbub label).
+#     Raised voices are detected via Screaming, Yell, Shout, and Children
+#     shouting — labels that indicate distress or aggression.
 
 variables:
   day_start: 6
@@ -142,7 +142,7 @@ policies:
     condition: >
       current_event_label in [
         'Knock', 'Door', 'Sliding door', 'Walk, footsteps'
-      ] and current_confidence > 0.5 and is_night
+      ] and current_confidence > 0.5 and (is_night or current_hour < 7)
     actions:
       - "log_metadata"
       - "record_evidence"
@@ -214,6 +214,7 @@ policies:
       - "record_evidence"
       - "telegram_alert"
       - "cloud_upload"
+    ignore_privacy: true
 
   - name: "Loud Music (Night)"
     description: "Music playing at night or before 08:00."
