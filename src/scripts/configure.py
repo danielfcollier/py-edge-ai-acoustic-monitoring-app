@@ -430,6 +430,11 @@ def cmd_install(mode_arg: str | None, config_path: str, env_path: str) -> None:
         )
         print(f"\n  ✅ Done! Start with: sudo systemctl start {svc}")
         print(f"     Test live:        ai-acoustic-monitor --test --config {cfg} --env {env}")
+        print()
+        print("  📋 Viewing logs:")
+        print(f"     journalctl -u {svc.split(' /')[0]} -f          # follow live")
+        print(f"     journalctl -u {svc.split(' /')[0]} -n 100      # last 100 lines")
+        print(f"     journalctl -u {svc.split(' /')[0]} -p err      # errors only")
     except Exception as exc:
         print(f"\n  ❌ Install failed: {exc}")
         sys.exit(1)
