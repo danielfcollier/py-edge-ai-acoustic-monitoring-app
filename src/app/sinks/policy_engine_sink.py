@@ -55,6 +55,10 @@ class PolicyEngineSink(AudioSink):
         self._alert_cooldown = settings.CONFIG.services.alert_cooldown_seconds
         self._last_alert_times: dict[str, float] = {}  # {policy_name: last_alert_timestamp}
 
+        # Per-recording deduplication: suppress repeated log lines for the same policy
+        # within a single recording session. Cleared when recording ends.
+        self._logged_this_recording: set[str] = set()
+
         # Time Constraints
         self._day_start = settings.CONFIG.services.day_start_hour
         self._night_start = settings.CONFIG.services.night_start_hour
@@ -70,6 +74,10 @@ class PolicyEngineSink(AudioSink):
         """
         # Reset actions for this frame (they are recalculated every cycle)
         self._context.actions_to_take = []
+
+        # Clear per-recording dedup set when not recording
+        if not self._context.is_recording:
+            self._logged_this_recording.clear()
 
         # If silence, we skip detailed eval, but let's log it for debug parity
         if self._context.current_event_label == "Silence":
@@ -150,7 +158,17 @@ class PolicyEngineSink(AudioSink):
         non_alert_actions = [a for a in policy.actions if a not in _ALERT_ACTIONS]
         if non_alert_actions:
             self._context.actions_to_take.extend(non_alert_actions)
-            logger.info(f"🚨 Policy matched: {policy.name} [{self._context.current_event_label}]")
+            if policy.name not in self._logged_this_recording:
+                m = self._context.metrics
+                top = self._context.top_classes
+                top_str = "  ".join(f"{n}({s:.2f})" for n, s in top)
+                logger.info(
+                    f"🚨 Policy matched: {policy.name} | "
+                    f"{self._context.current_event_label}({self._context.current_confidence:.2f}) | "
+                    f"dBSPL={m.get('dbspl', 0):.1f}  RMS={m.get('rms', 0):.4f}  flux={m.get('flux', 0):.1f} | "
+                    f"top5: {top_str}"
+                )
+                self._logged_this_recording.add(policy.name)
             logger.debug(f"   -> Actions: {non_alert_actions}")
 
         # Alert actions: for recording-associated policies, send only on the first
@@ -169,12 +187,20 @@ class PolicyEngineSink(AudioSink):
         """
         label = self._context.current_event_label
         conf = self._context.current_confidence
+        m = self._context.metrics
+        top = self._context.top_classes
+
+        top_lines = "\n".join(f"  {i+1}. {n} ({s:.2f})" for i, (n, s) in enumerate(top))
 
         lines = [
             "🚨 **Policy Triggered**",
             f"🛡️ Rule: {policy.name}",
             f"👂 Detected: {label} ({conf:.2f})",
             f"🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"📊 dBSPL: {m.get('dbspl', 0):.1f}  RMS: {m.get('rms', 0):.4f}  flux: {m.get('flux', 0):.1f}",
+            "",
+            f"🔍 Top classes:\n{top_lines}",
         ]
 
         msg = "\n".join(lines)
