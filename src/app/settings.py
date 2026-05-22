@@ -254,9 +254,9 @@ class AppSettings(BaseSettings):
         else:
             return node
 
-    def load_policy_file(self, path: str = "security_policy.yaml"):
+    def load_policy_file(self, path: str = "security_policy.yaml", env_path: str | None = None):
         """Loads YAML, merges ENV vars, and validates."""
-        load_dotenv()
+        load_dotenv(env_path, override=True)
 
         p = Path(path)
         if not p.exists():
