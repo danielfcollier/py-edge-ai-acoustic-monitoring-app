@@ -174,8 +174,3 @@ jobs:
             "${{ vars.DEB_S3_BUCKET }}"
         env:
           APT_DISTS: "trixie"
-
-      - name: Attach ONNX model to release
-        run: gh release upload "${{ github.event.release.tag_name }}" src/yamnet/yamnet.onnx --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
