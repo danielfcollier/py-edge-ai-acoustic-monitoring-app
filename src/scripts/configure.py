@@ -878,7 +878,7 @@ def main() -> None:
         help="Start the monitor (delegates to ai-acoustic-monitor-run).",
     )
 
-    args = parser.parse_args()
+    args, extra = parser.parse_known_args()
 
     if args.manual:
         cmd_manual()
@@ -893,7 +893,7 @@ def main() -> None:
     elif args.run:
         import shlex  # noqa: PLC0415
 
-        cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env]
+        cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env] + extra
         print(f"Running: {shlex.join(cmd)}")
         os.execvp(cmd[0], cmd)
     else:

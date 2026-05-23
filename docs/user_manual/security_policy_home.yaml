@@ -38,6 +38,9 @@ services:
   alert_cooldown_seconds: 60
   day_start_hour: "{day_start}"
   night_start_hour: "{night_start}"
+  telegram_notification_mode: "cumulative"
+  telegram_cumulative_window_minutes: 5
+  alert_min_display_confidence: 0.3
   cloud:
     provider: "magalu"
     bucket_name: "{MAGALU_BUCKET}"
@@ -97,6 +100,7 @@ reporting:
     "Bark": "Dog Barking"
     "Howl": "Dog Barking"
     "Whimper": "Dog Barking"
+    "Domestic animals, pets": "Dog Barking"
     "Musical instrument": "Instruments"
     "Guitar": "Instruments"
     "Piano": "Instruments"
@@ -122,32 +126,32 @@ policies:
   # INTRUSIONS — fires any hour, ignores privacy mode
   # ---------------------------------------------------------------------------
 
-  - name: "Critical Intrusion"
-    description: "Break-in and weapon sounds — immediate alert regardless of privacy mode."
-    condition: >
-      current_event_label in [
-        'Glass', 'Shatter', 'Breaking', 'Smash, crash',
-        'Gunshot, gunfire', 'Machine gun', 'Cap gun',
-        'Explosion', 'Bang'
-      ] and current_confidence > 0.5
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
-    ignore_privacy: true
+  # - name: "Critical Intrusion"
+  #   description: "Break-in and weapon sounds — immediate alert regardless of privacy mode."
+  #   condition: >
+  #     current_event_label in [
+  #       'Glass', 'Shatter', 'Breaking', 'Smash, crash',
+  #       'Gunshot, gunfire', 'Machine gun', 'Cap gun',
+  #       'Explosion', 'Bang'
+  #     ] and current_confidence > 0.8
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
+  #   ignore_privacy: true
 
-  - name: "Suspicious Activity (Night)"
-    description: "Knocks, door movements, and footsteps during 00:00–06:59."
-    condition: >
-      current_event_label in [
-        'Knock', 'Door', 'Sliding door', 'Walk, footsteps'
-      ] and current_confidence > 0.5 and current_hour < 7
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
+  # - name: "Suspicious Activity (Night)"
+  #   description: "Knocks, door movements, and footsteps during 00:00–06:59."
+  #   condition: >
+  #     current_event_label in [
+  #       'Knock', 'Door', 'Sliding door', 'Walk, footsteps'
+  #     ] and current_confidence > 0.5 and current_hour < 7
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
 
   # ---------------------------------------------------------------------------
   # DOG BARKING — fires any hour, ignores privacy mode
@@ -159,7 +163,8 @@ policies:
       current_event_label in [
         'Dog', 'Bark', 'Howl',
         'Whimper', 'Whimper (dog)',
-        'Canidae, dogs, wolves'
+        'Canidae, dogs, wolves',
+        'Domestic animals, pets'
       ] and current_confidence > 0.45
     actions:
       - "log_metadata"
@@ -172,26 +177,26 @@ policies:
   # MUSIC INSTRUMENTS — alert during quiet hours, silent log during the day
   # ---------------------------------------------------------------------------
 
-  - name: "Instruments (Quiet Hours)"
-    description: "Alert and record instrument playing at night or before 08:00."
-    condition: >
-      current_event_label in [
-        'Musical instrument',
-        'Guitar', 'Acoustic guitar', 'Electric guitar', 'Bass guitar',
-        'Steel guitar, slide guitar', 'Plucked string instrument',
-        'Piano', 'Electric piano', 'Keyboard (musical)',
-        'Drum', 'Drum kit', 'Drum machine', 'Drum roll', 'Snare drum', 'Bass drum',
-        'Violin, fiddle', 'Cello', 'Bowed string instrument',
-        'Flute', 'Trumpet', 'Saxophone',
-        'Brass instrument', 'Wind instrument, woodwind instrument',
-        'Singing', 'Child singing', 'Vocal music'
-      ] and current_confidence > 0.5 and (is_night or current_hour < 8)
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
-    ignore_privacy: true
+  # - name: "Instruments (Quiet Hours)"
+  #   description: "Alert and record instrument playing at night or before 08:00."
+  #   condition: >
+  #     current_event_label in [
+  #       'Musical instrument',
+  #       'Guitar', 'Acoustic guitar', 'Electric guitar', 'Bass guitar',
+  #       'Steel guitar, slide guitar', 'Plucked string instrument',
+  #       'Piano', 'Electric piano', 'Keyboard (musical)',
+  #       'Drum', 'Drum kit', 'Drum machine', 'Drum roll', 'Snare drum', 'Bass drum',
+  #       'Violin, fiddle', 'Cello', 'Bowed string instrument',
+  #       'Flute', 'Trumpet', 'Saxophone',
+  #       'Brass instrument', 'Wind instrument, woodwind instrument',
+  #       'Singing', 'Child singing', 'Vocal music'
+  #     ] and current_confidence > 0.5 and (is_night or current_hour < 8)
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
+  #   ignore_privacy: true
 
   # Daytime instrument log removed — neighbour's instrument playing is
   # expected background noise and not worth recording.
@@ -201,58 +206,73 @@ policies:
   # Raised voices captured via Yell/Shout/Screaming (not Speech/Conversation).
   # ---------------------------------------------------------------------------
 
-  - name: "Screams & Distress (Night)"
-    description: "Screaming, yelling, or crying during quiet hours — possible distress or aggression."
-    condition: >
-      current_event_label in [
-        'Screaming', 'Yell', 'Shout',
-        'Children shouting',
-        'Crying, sobbing'
-      ] and current_confidence > 0.45 and (is_night or current_hour < 8)
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
-    ignore_privacy: true
+  # - name: "Screams & Distress (Night)"
+  #   description: "Screaming, yelling, or crying during quiet hours — possible distress or aggression."
+  #   condition: >
+  #     current_event_label in [
+  #       'Screaming', 'Yell', 'Shout',
+  #       'Children shouting',
+  #       'Crying, sobbing'
+  #     ] and current_confidence > 0.45 and (is_night or current_hour < 8)
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
+  #   ignore_privacy: true
 
-  - name: "Loud Music (Night)"
-    description: "Music playing at night or before 08:00."
-    condition: >
-      current_event_label in [
-        'Music', 'Dance music', 'Electronic dance music',
-        'Rock music', 'Hip hop music', 'Pop music',
-        'Drum and bass', 'House music', 'Electronic music',
-        'Ambient music', 'Angry music'
-      ] and current_confidence > 0.45 and (is_night or current_hour < 8)
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
+  # - name: "Loud Music (Night)"
+  #   description: "Music playing at night or before 08:00."
+  #   condition: >
+  #     current_event_label in [
+  #       'Music', 'Dance music', 'Electronic dance music',
+  #       'Rock music', 'Hip hop music', 'Pop music',
+  #       'Drum and bass', 'House music', 'Electronic music',
+  #       'Ambient music', 'Angry music'
+  #     ] and current_confidence > 0.45 and (is_night or current_hour < 8)
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
 
-  - name: "Crowd Noise (Night)"
-    description: "Crowd or party noise during quiet hours."
-    condition: >
-      current_event_label in ['Crowd', 'Hubbub, speech noise, speech babble']
-      and current_confidence > 0.45 and (is_night or current_hour < 8)
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
+  # - name: "Crowd Noise (Night)"
+  #   description: "Crowd or party noise during quiet hours."
+  #   condition: >
+  #     current_event_label in ['Crowd', 'Hubbub, speech noise, speech babble']
+  #     and current_confidence > 0.45 and (is_night or current_hour < 8)
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
 
-  - name: "Loud dB Threshold (Night)"
-    description: "Physics fallback — sustained loud sound above 50 dB during quiet hours, excluding natural/ambient sources."
-    condition: >
-      metrics['dbspl'] > 50.0
-      and (is_night or current_hour < 8)
-      and current_event_label not in [
-        'Animal', 'Wild animals', 'Bird', 'Bird vocalization, bird call, bird song',
-        'Chirp, tweet', 'Crow', 'Frog', 'Rain', 'Thunder', 'Outside, urban or manmade'
-      ]
-    actions:
-      - "log_metadata"
-      - "record_evidence"
-      - "telegram_alert"
-      - "cloud_upload"
+  # - name: "Loud dB Threshold (Night)"
+  #   description: "Physics fallback — sustained loud sound above 50 dB during quiet hours, excluding natural/ambient sources."
+  #   condition: >
+  #     metrics['dbspl'] > 48.0
+  #     and (is_night or current_hour < 8)
+  #     and current_event_label not in [
+  #       'Animal', 'Wild animals', 'Bird', 'Bird vocalization, bird call, bird song',
+  #       'Chirp, tweet', 'Crow', 'Frog', 'Rain', 'Thunder', 'Outside, urban or manmade'
+  #     ]
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
+
+  # - name: "Loud dB Threshold (Day)"
+  #   description: "Physics fallback — sound above 58 dB during the day, catches events (e.g. dog barks) that YAMNet mislabels."
+  #   condition: >
+  #     metrics['dbspl'] > 58.0
+  #     and is_day
+  #     and current_event_label not in [
+  #       'Animal', 'Wild animals', 'Bird', 'Bird vocalization, bird call, bird song',
+  #       'Chirp, tweet', 'Crow', 'Frog', 'Rain', 'Thunder', 'Outside, urban or manmade'
+  #     ]
+  #   actions:
+  #     - "log_metadata"
+  #     - "record_evidence"
+  #     - "telegram_alert"
+  #     - "cloud_upload"
