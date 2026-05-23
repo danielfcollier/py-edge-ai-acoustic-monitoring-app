@@ -212,6 +212,11 @@ services:
   recording_post_roll_seconds: 10           # seconds to keep recording after event ends
 
   alert_cooldown_seconds: 60               # minimum seconds between Telegram alerts per rule
+
+  telegram_notification_mode: "instant"    # "instant" | "cumulative"
+  telegram_cumulative_window_minutes: 5    # only used when mode is "cumulative"
+  alert_min_display_confidence: 0.0        # hide label/top-5 in alerts below this confidence
+
   retry_attempts: 3                         # upload retry count
   retry_delay_seconds: 5                    # seconds between upload retries
 
@@ -240,6 +245,9 @@ services:
 | `recording_max_seconds` | int | `60` | Maximum length of any single evidence recording. |
 | `recording_post_roll_seconds` | int | `10` | How many extra seconds to record after the policy stops matching (prevents abrupt cut-off). |
 | `alert_cooldown_seconds` | int | `60` | Minimum gap between consecutive Telegram alerts for the same rule. Recording/upload actions are never gated by this. |
+| `telegram_notification_mode` | string | `"instant"` | `"instant"` sends each alert immediately. `"cumulative"` batches all matched policies into one summary message per window — useful when many rules fire at once. |
+| `telegram_cumulative_window_minutes` | int | `5` | Window length for cumulative mode. One summary is sent per window containing all triggered policies, their event counts, and peak metrics. |
+| `alert_min_display_confidence` | float | `0.0` | When the top predicted class confidence is below this value, the label name and top-5 classes are omitted from the alert. Only the policy name and physics metrics (dBSPL, RMS, flux) are shown. Set to e.g. `0.3` to suppress noisy low-confidence labels. |
 | `retry_attempts` | int | `3` | Number of upload retries before an evidence file is moved to a local failure queue. |
 | `retry_delay_seconds` | int | `5` | Seconds to wait between retry attempts. |
 | `heartbeat_interval_seconds` | int | `60` | How often `SystemHeartbeatService` appends a row to the metrics CSV and pings healthchecks.io. |
@@ -420,6 +428,8 @@ ai-acoustic-monitor-run \
 |---|---|---|
 | `--config PATH` | `security_policy.yaml` | Path to the YAML policy file. |
 | `--env PATH` | `.env` | Path to the credentials file. |
+| `--top-metrics` | off | Print a peak RMS / Flux / dBSPL summary line at each interval — useful for calibrating SAD and dB thresholds without checking the full log. |
+| `--top-metrics-interval SEC` | `60` | How often (seconds) the peak summary is printed. |
 
 Additional flags are passed through to the underlying `umik-base-app` (`--device`, `--run-mode`, `--zmq-host`, etc.). Run `ai-acoustic-monitor-run --help` for the full list.
 
