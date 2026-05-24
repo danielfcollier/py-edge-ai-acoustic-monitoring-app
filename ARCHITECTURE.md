@@ -9,7 +9,7 @@ The system separates real-time latency-sensitive work (the "hot path") from heav
 
 ## Hot Path: Real-Time Audio Pipeline
 
-Five sinks execute in order on every chunk. Each sink reads/writes the shared `PipelineContext`.
+Five sinks (six when `--top-metrics` is active) execute in order on every chunk. Each sink reads/writes the shared `PipelineContext`.
 
 ```mermaid
 flowchart TD
@@ -17,12 +17,14 @@ flowchart TD
     M --> |"context.metrics: rms, flux, dBSPL"| S[SADGatewaySink]
     S --> |"context.should_infer"| F[FeatureExtractorSink]
     F --> |"context.current_event_label"| P[PolicyEngineSink]
-    P --> |"context.actions_to_take"| B[SmartBufferSink]
+    P --> |"context.actions_to_take"| T["TopMetricsSink (optional)"]
+    T --> B[SmartBufferSink]
 
     style M fill:#e8f5e9,stroke:#388e3c
     style S fill:#e8f5e9,stroke:#388e3c
     style F fill:#fff3e0,stroke:#f57c00
     style P fill:#e3f2fd,stroke:#1976d2
+    style T fill:#f3e5f5,stroke:#7b1fa2
     style B fill:#fce4ec,stroke:#c62828
 ```
 
@@ -30,8 +32,9 @@ flowchart TD
 |---|---|
 | **BasicMetricsSink** | Computes RMS, Flux, dBSPL on every chunk. Maintains pre-roll buffer. Updates Prometheus. |
 | **SADGatewaySink** | Two-stage noise gate: Stage 1 (RMS/Flux), Stage 2 (dBSPL if mic is calibrated). Sets `should_infer`. |
-| **FeatureExtractorSink** | Runs YAMNet (TFLite or full TF) when `should_infer=True`. Buffers chunks until ~0.975 s is collected. |
+| **FeatureExtractorSink** | Runs YAMNet when `should_infer=True`. Buffers chunks until ~0.975 s is collected. |
 | **PolicyEngineSink** | Evaluates YAML policy rules against context metrics. Respects privacy mode (`ignore_privacy` flag). |
+| **TopMetricsSink** | _(optional, enabled with `--top-metrics`)_ Accumulates peak RMS, Flux, and dBSPL and logs a summary line every interval. Calibration aid — has no effect on recording or alerts. |
 | **SmartBufferSink** | State-machine recorder. On trigger: copies pre-roll + live audio into a buffer, pushes `RawEventObject` to `raw_queue` when post-roll expires or max duration is hit. |
 
 ## Cold Path: Background Workers

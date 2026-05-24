@@ -183,6 +183,15 @@ class ServiceConfig(BaseModel):
     heartbeat_interval_seconds: int = 60
     alert_cooldown_seconds: int = 60
 
+    # Telegram Notification Mode
+    # "instant"    — send each alert immediately (original behaviour)
+    # "cumulative" — batch alerts and send one summary per window
+    telegram_notification_mode: Literal["instant", "cumulative"] = "instant"
+    telegram_cumulative_window_minutes: int = 5
+    # Minimum confidence to include label name and top-5 classes in the alert.
+    # Below this value only the policy name and physics metrics are shown.
+    alert_min_display_confidence: float = 0.0
+
     # Time Settings (Defining Day/Night)
     day_start_hour: int = 6  # 6 AM
     night_start_hour: int = 22  # 10 PM
@@ -254,9 +263,9 @@ class AppSettings(BaseSettings):
         else:
             return node
 
-    def load_policy_file(self, path: str = "security_policy.yaml"):
+    def load_policy_file(self, path: str = "security_policy.yaml", env_path: str | None = None):
         """Loads YAML, merges ENV vars, and validates."""
-        load_dotenv()
+        load_dotenv(env_path, override=True)
 
         p = Path(path)
         if not p.exists():

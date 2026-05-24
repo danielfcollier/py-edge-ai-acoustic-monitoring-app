@@ -41,6 +41,7 @@ class FeatureExtractorSink(AudioSink):
 
         self._logging_threshold = self._config.logging_confidence_threshold
         self._linear_gain: float | None = None
+        self._last_logged_label: str = ""
 
         self._load_classes()
         self._resolve_excluded_indices()
@@ -156,25 +157,24 @@ class FeatureExtractorSink(AudioSink):
         label = self._classes[prediction_index] if prediction_index < len(self._classes) else "Unknown"
         confidence = float(scores[prediction_index])
 
-        # Debug: Top 5
+        # Top 5 (excluding suppressed classes)
         sorted_indices = np.argsort(scores)[::-1]
-        debug_parts = ["🔍 YAMNet Top 5:"]
-        count = 0
+        top5: list[tuple[str, float]] = []
         for idx in sorted_indices:
-            if count >= 5:
+            if len(top5) >= 5:
                 break
             if idx in self._excluded_indices:
                 continue
             cls_name = self._classes[idx] if idx < len(self._classes) else "Unknown"
-            debug_parts.append(f"[{cls_name}: {scores[idx]:.2f}]")
-            count += 1
-        logger.debug(" ".join(debug_parts))
+            top5.append((cls_name, float(scores[idx])))
+        logger.debug("🔍 YAMNet Top 5: " + " ".join(f"[{n}: {s:.2f}]" for n, s in top5))
 
         self._context.current_event_label = label
         self._context.current_confidence = confidence
+        self._context.top_classes = top5
         self._metrics.update_ai_status(label, confidence)
 
-        if confidence > self._logging_threshold:
+        if confidence > self._logging_threshold and label != self._last_logged_label:
             rms = self._context.metrics.get("rms", 0.0)
             flux = self._context.metrics.get("flux", 0.0)
             dbspl = self._context.metrics.get("dbspl", 0.0)
@@ -185,3 +185,4 @@ class FeatureExtractorSink(AudioSink):
                 )
             else:
                 logger.info(f"rms={rms:.4f} flux={flux:05.1f} | 👂 Heard: {label} ({confidence:.2f})")
+            self._last_logged_label = label

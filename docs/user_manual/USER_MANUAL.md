@@ -155,7 +155,7 @@ Controls the YAMNet inference pipeline and the Sound Activity Detection (SAD) ga
 
 ```yaml
 feature_extractor:
-  use_tflite: true                  # true = TFLite (default, lightweight); false = full SavedModel (requires --extra full)
+  model_path: "src/yamnet/yamnet.onnx"   # path to the ONNX model file
 
   # ── Sound Activity Detection (SAD) gate ────────────────────────────────────
   # Stage 1: Cheap RMS + Flux check (always runs)
@@ -183,7 +183,7 @@ feature_extractor:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `use_tflite` | bool | `true` | Use the lightweight TFLite runtime (default). Set `false` for the full TF SavedModel — requires `uv sync --extra full`. |
+| `model_path` | str | `src/yamnet/yamnet.onnx` | Path to the YAMNet ONNX model. Run `ai-acoustic-monitor-setup-models` to download it. |
 | `sad_threshold_rms` | float | `0.002` | RMS amplitude gate. Frames below this skip AI inference entirely. Increase to suppress more background noise. |
 | `sad_threshold_flux` | float | `5.0` | Spectral flux gate. Guards against DC offsets that pass the RMS check despite silence. |
 | `sad_threshold_dbspl` | float | `45.0` | dBSPL gate. Only active when a calibration file is loaded. Frames below this dBSPL do not reach YAMNet. |
@@ -212,6 +212,11 @@ services:
   recording_post_roll_seconds: 10           # seconds to keep recording after event ends
 
   alert_cooldown_seconds: 60               # minimum seconds between Telegram alerts per rule
+
+  telegram_notification_mode: "instant"    # "instant" | "cumulative"
+  telegram_cumulative_window_minutes: 5    # only used when mode is "cumulative"
+  alert_min_display_confidence: 0.0        # hide label/top-5 in alerts below this confidence
+
   retry_attempts: 3                         # upload retry count
   retry_delay_seconds: 5                    # seconds between upload retries
 
@@ -240,6 +245,9 @@ services:
 | `recording_max_seconds` | int | `60` | Maximum length of any single evidence recording. |
 | `recording_post_roll_seconds` | int | `10` | How many extra seconds to record after the policy stops matching (prevents abrupt cut-off). |
 | `alert_cooldown_seconds` | int | `60` | Minimum gap between consecutive Telegram alerts for the same rule. Recording/upload actions are never gated by this. |
+| `telegram_notification_mode` | string | `"instant"` | `"instant"` sends each alert immediately. `"cumulative"` batches all matched policies into one summary message per window — useful when many rules fire at once. |
+| `telegram_cumulative_window_minutes` | int | `5` | Window length for cumulative mode. One summary is sent per window containing all triggered policies, their event counts, and peak metrics. |
+| `alert_min_display_confidence` | float | `0.0` | When the top predicted class confidence is below this value, the label name and top-5 classes are omitted from the alert. Only the policy name and physics metrics (dBSPL, RMS, flux) are shown. Set to e.g. `0.3` to suppress noisy low-confidence labels. |
 | `retry_attempts` | int | `3` | Number of upload retries before an evidence file is moved to a local failure queue. |
 | `retry_delay_seconds` | int | `5` | Seconds to wait between retry attempts. |
 | `heartbeat_interval_seconds` | int | `60` | How often `SystemHeartbeatService` appends a row to the metrics CSV and pings healthchecks.io. |
@@ -395,6 +403,12 @@ The wizard and installer write files to different locations depending on the ste
 
 The systemd service always reads from `/etc/ai-acoustic-monitor/`. The `~/.config` directory is only used by the wizard. If you change your policy or credentials with the wizard after installation, re-run `sudo ai-acoustic-monitor --install` to copy the updated files to `/etc/ai-acoustic-monitor/`.
 
+**Sample profiles** are installed to `/usr/lib/ai-acoustic-monitor/profiles/`. The `--configure` wizard reads them from there automatically. You can also copy one directly as a starting point:
+
+```bash
+cp /usr/lib/ai-acoustic-monitor/profiles/security_policy_home.yaml ./security_policy.yaml
+```
+
 ```bash
 # Run the monitor (config and credentials installed by the wizard)
 ai-acoustic-monitor-run \
@@ -414,6 +428,8 @@ ai-acoustic-monitor-run \
 |---|---|---|
 | `--config PATH` | `security_policy.yaml` | Path to the YAML policy file. |
 | `--env PATH` | `.env` | Path to the credentials file. |
+| `--top-metrics` | off | Print a peak RMS / Flux / dBSPL summary line at each interval — useful for calibrating SAD and dB thresholds without checking the full log. |
+| `--top-metrics-interval SEC` | `60` | How often (seconds) the peak summary is printed. |
 
 Additional flags are passed through to the underlying `umik-base-app` (`--device`, `--run-mode`, `--zmq-host`, etc.). Run `ai-acoustic-monitor-run --help` for the full list.
 
@@ -529,6 +545,7 @@ When a policy with `telegram_alert` in its `actions` fires, you receive a messag
 🚨 Policy Triggered
 🛡️ Rule: Critical Intrusion
 👂 Detected: Glass (0.91)
+🕐 2026-05-22 03:14:07
 ```
 
 **Cooldown**: consecutive alerts from the same rule are throttled by `alert_cooldown_seconds` (default: 60 s). If a dog barks for 5 minutes, you get one alert per minute — not one per audio frame.
