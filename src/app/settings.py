@@ -23,7 +23,11 @@ from umik_base_app.settings import Settings as BaseSettings
 try:
     import psutil
 except ImportError:
-    psutil = None
+    psutil = None  # type: ignore
+
+# Resolve YAMNet asset directory: installed path takes priority over dev checkout.
+_YAMNET_INSTALL = Path("/usr/lib/ai-acoustic-monitor")
+_YAMNET_BASE = str(_YAMNET_INSTALL if _YAMNET_INSTALL.is_dir() else Path(__file__).resolve().parents[2] / "yamnet")
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +113,9 @@ class PolicyRule(BaseModel):
 
 
 class FeatureExtractorConfig(BaseModel):
-    model_path: str = "src/yamnet/yamnet.onnx"
-    model_path_full: str = "src/yamnet/model"
-    class_map_path: str = "src/yamnet/class_map/yamnet_class_map.csv"
+    model_path: str = f"{_YAMNET_BASE}/yamnet.onnx"
+    model_path_full: str = f"{_YAMNET_BASE}/model"
+    class_map_path: str = f"{_YAMNET_BASE}/class_map/yamnet_class_map.csv"
 
     force_cpu: bool = True
 
