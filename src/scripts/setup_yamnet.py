@@ -8,7 +8,6 @@ Year: 2026
 """
 
 import logging
-import os
 import sys
 import tarfile
 from pathlib import Path
@@ -101,7 +100,7 @@ def main():
 
     logger.info("\n--- Setup Complete ---")
     logger.info(f"📂 Assets located in: {base_dir.resolve()}")
-    logger.info(f"\n  model_path: \"{onnx_dest}\"")
+    logger.info(f'\n  model_path: "{onnx_dest}"')
     logger.info("  (use this path in your security_policy.yaml)")
 
 

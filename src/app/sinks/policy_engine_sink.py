@@ -32,6 +32,7 @@ _RECORDING_ACTIONS = frozenset({"record_evidence", "cloud_upload"})
 @dataclass
 class _CumulativeEntry:
     """Aggregated data for one policy within a cumulative notification window."""
+
     count: int = 0
     peak_dbspl: float = 0.0
     peak_rms: float = 0.0
@@ -87,7 +88,11 @@ class PolicyEngineSink(AudioSink):
         logger.info(
             f"🧠 Policy Engine Initialized. Loaded {len(self._policies)} rules. "
             f"Notifications: {self._notification_mode}"
-            + (f" (window {svc.telegram_cumulative_window_minutes}min)" if self._notification_mode == "cumulative" else "")
+            + (
+                f" (window {svc.telegram_cumulative_window_minutes}min)"
+                if self._notification_mode == "cumulative"
+                else ""
+            )
         )
 
     def handle(self, ctx: AudioCtx) -> None:
@@ -249,9 +254,7 @@ class PolicyEngineSink(AudioSink):
 
         for policy_name, entry in self._cumulative_buffer.items():
             lines.append(f"🛡️ {policy_name}  ×{entry.count}")
-            lines.append(
-                f"   📊 dBSPL: {entry.peak_dbspl:.1f}  RMS: {entry.peak_rms:.4f}  flux: {entry.peak_flux:.1f}"
-            )
+            lines.append(f"   📊 dBSPL: {entry.peak_dbspl:.1f}  RMS: {entry.peak_rms:.4f}  flux: {entry.peak_flux:.1f}")
             if entry.best_confidence >= self._min_display_confidence and entry.best_label:
                 top_str = ", ".join(f"{n} ({s:.2f})" for n, s in entry.top_classes[:3])
                 lines.append(f"   👂 {entry.best_label} ({entry.best_confidence:.2f})  —  {top_str}")
@@ -279,7 +282,7 @@ class PolicyEngineSink(AudioSink):
 
         if conf >= self._min_display_confidence:
             top = self._context.top_classes
-            top_lines = "\n".join(f"  {i+1}. {n} ({s:.2f})" for i, (n, s) in enumerate(top))
+            top_lines = "\n".join(f"  {i + 1}. {n} ({s:.2f})" for i, (n, s) in enumerate(top))
             lines += [
                 "",
                 f"👂 Detected: {label} ({conf:.2f})",

@@ -43,6 +43,7 @@ def _model_path() -> str:
         return str(installed)
     return "src/yamnet/yamnet.onnx"
 
+
 CONFIG_DIR = Path.home() / ".config" / "ai-acoustic-monitor"
 ENV_FILE = CONFIG_DIR / ".env"
 

@@ -60,7 +60,9 @@ def parse_cli_args():
     parser.add_argument("-c", "--config", type=str, default="security_policy.yaml", help="Path to policy YAML")
     parser.add_argument("-e", "--env", type=str, default=".env", help="Path to .env file")
     parser.add_argument("--top-metrics", action="store_true", help="Print peak RMS/Flux/dBSPL summary periodically")
-    parser.add_argument("--top-metrics-interval", type=int, default=60, metavar="SEC", help="Summary interval in seconds (default: 60)")
+    parser.add_argument(
+        "--top-metrics-interval", type=int, default=60, metavar="SEC", help="Summary interval in seconds (default: 60)"
+    )
     parser.add_argument("--help", action="store_true", help="Show help message")
     return parser.parse_known_args()
 
