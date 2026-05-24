@@ -58,9 +58,9 @@ class FeatureExtractorSink(AudioSink):
         return Path(self._config.model_path).exists()
 
     def _download_models(self):
-        from scripts import setup_models
+        from scripts import setup_yamnet
 
-        setup_models.main()
+        setup_yamnet.main()
 
     def _load_classes(self):
         csv_path = self._config.class_map_path

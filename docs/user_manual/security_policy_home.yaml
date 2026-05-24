@@ -46,7 +46,6 @@ services:
     bucket_name: "{MAGALU_BUCKET}"
 
 feature_extractor:
-  model_path: "src/yamnet/yamnet.onnx"
   sad_threshold_rms: 0.002
   sad_threshold_flux: 1.0
   sad_threshold_dbspl: 45.0
@@ -101,6 +100,7 @@ reporting:
     "Howl": "Dog Barking"
     "Whimper": "Dog Barking"
     "Domestic animals, pets": "Dog Barking"
+    "Livestock, farm animals, working animals": "Dog Barking"
     "Musical instrument": "Instruments"
     "Guitar": "Instruments"
     "Piano": "Instruments"
@@ -164,7 +164,8 @@ policies:
         'Dog', 'Bark', 'Howl',
         'Whimper', 'Whimper (dog)',
         'Canidae, dogs, wolves',
-        'Domestic animals, pets'
+        'Domestic animals, pets',
+        'Livestock, farm animals, working animals'
       ] and current_confidence > 0.45
     actions:
       - "log_metadata"
