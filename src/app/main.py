@@ -35,6 +35,7 @@ from .sinks.feature_extractor_sink import FeatureExtractorSink
 from .sinks.policy_engine_sink import PolicyEngineSink
 from .sinks.sad_gateway_sink import SADGatewaySink
 from .sinks.smart_buffer_sink import SmartBufferSink
+from .sinks.top_metrics_sink import TopMetricsSink
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="keras.src.export.tf2onnx_lib")
 
@@ -58,6 +59,10 @@ def parse_cli_args():
     parser = argparse.ArgumentParser(description="AI Acoustic Monitor", add_help=False)
     parser.add_argument("-c", "--config", type=str, default="security_policy.yaml", help="Path to policy YAML")
     parser.add_argument("-e", "--env", type=str, default=".env", help="Path to .env file")
+    parser.add_argument("--top-metrics", action="store_true", help="Print peak RMS/Flux/dBSPL summary periodically")
+    parser.add_argument(
+        "--top-metrics-interval", type=int, default=60, metavar="SEC", help="Summary interval in seconds (default: 60)"
+    )
     parser.add_argument("--help", action="store_true", help="Show help message")
     return parser.parse_known_args()
 
@@ -84,7 +89,7 @@ def main():
     if args.env and Path(args.env).exists():
         logger.info(f"Loading secrets from {args.env}")
 
-    settings.load_policy_file(args.config)
+    settings.load_policy_file(args.config, env_path=args.env)
 
     svc_cfg = settings.CONFIG.services
     if svc_cfg.prometheus_enabled:
@@ -155,6 +160,9 @@ def main():
     pipeline.add_sink(SADGatewaySink(context))
     pipeline.add_sink(FeatureExtractorSink(context))
     pipeline.add_sink(PolicyEngineSink(context))
+
+    if args.top_metrics:
+        pipeline.add_sink(TopMetricsSink(context, interval=args.top_metrics_interval))
 
     # Sink: Smart Buffer (captures raw audio, hands off to transformer)
     pipeline.add_sink(SmartBufferSink(context, raw_queue))

@@ -41,6 +41,7 @@ Audio Source  (microphone via umik-base-app AudioPipeline)
   ├─ SADGatewaySink         (two-stage noise gate — drops silent frames before AI)
   ├─ FeatureExtractorSink   (YAMNet inference → context.current_event_label)
   ├─ PolicyEngineSink       (evaluate YAML rules → context.actions_to_take)
+  ├─ TopMetricsSink         (optional, --top-metrics — logs peak metrics summary, no side effects)
   └─ SmartBufferSink        (state-machine recorder → raw_queue)
          │
     raw_queue
@@ -70,6 +71,7 @@ src/
       sad_gateway_sink.py         # Two-stage noise gate
       feature_extractor_sink.py   # YAMNet inference
       policy_engine_sink.py       # YAML rule evaluation
+      top_metrics_sink.py         # Optional calibration aid (--top-metrics)
       smart_buffer_sink.py        # State-machine audio recorder
     services/         # Background workers and integrations
       telegram_bot_client.py

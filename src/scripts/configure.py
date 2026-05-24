@@ -29,11 +29,20 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Resource discovery — installed .deb → dev checkout fallback
 # ---------------------------------------------------------------------------
-_INSTALL_PROFILES = Path("/usr/lib/ai-acoustic-monitor/profiles")
+_INSTALL_BASE = Path("/usr/lib/ai-acoustic-monitor")
+_INSTALL_PROFILES = _INSTALL_BASE / "profiles"
 _INSTALL_MANUAL = Path("/usr/share/doc/ai-acoustic-monitor/USER_MANUAL.md")
 _DEV_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEV_PROFILES = _DEV_ROOT / "docs" / "user_manual"
 _DEV_MANUAL = _DEV_PROFILES / "USER_MANUAL.md"
+
+
+def _model_path() -> str:
+    installed = _INSTALL_BASE / "yamnet.onnx"
+    if installed.exists():
+        return str(installed)
+    return "src/yamnet/yamnet.onnx"
+
 
 CONFIG_DIR = Path.home() / ".config" / "ai-acoustic-monitor"
 ENV_FILE = CONFIG_DIR / ".env"
@@ -278,7 +287,7 @@ def _build_config(
         "",
         "# ── AI Feature Extractor ────────────────────────────────────",
         "feature_extractor:",
-        "  model_path: src/yamnet/yamnet.onnx",
+        f"  model_path: {_model_path()}",
         "  sad_threshold_rms: 0.002",
         "  sad_threshold_flux: 5.0",
         "  sad_threshold_dbspl: 45.0",
@@ -422,6 +431,11 @@ def cmd_install(mode_arg: str | None, config_path: str, env_path: str) -> None:
         )
         print(f"\n  ✅ Done! Start with: sudo systemctl start {svc}")
         print(f"     Test live:        ai-acoustic-monitor --test --config {cfg} --env {env}")
+        print()
+        print("  📋 Viewing logs:")
+        print(f"     journalctl -u {svc.split(' /')[0]} -f          # follow live")
+        print(f"     journalctl -u {svc.split(' /')[0]} -n 100      # last 100 lines")
+        print(f"     journalctl -u {svc.split(' /')[0]} -p err      # errors only")
     except Exception as exc:
         print(f"\n  ❌ Install failed: {exc}")
         sys.exit(1)
@@ -865,7 +879,7 @@ def main() -> None:
         help="Start the monitor (delegates to ai-acoustic-monitor-run).",
     )
 
-    args = parser.parse_args()
+    args, extra = parser.parse_known_args()
 
     if args.manual:
         cmd_manual()
@@ -880,7 +894,7 @@ def main() -> None:
     elif args.run:
         import shlex  # noqa: PLC0415
 
-        cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env]
+        cmd = ["ai-acoustic-monitor-run", "--config", args.config, "--env", args.env] + extra
         print(f"Running: {shlex.join(cmd)}")
         os.execvp(cmd[0], cmd)
     else:
