@@ -7,11 +7,13 @@ import pytest
 
 from app.context import PipelineContext
 
-# Ensure src/ is on the path so `scripts.*` resolves to src/scripts/,
-# not the system-level scripts package or the tests/scripts/ namespace.
+# src/app/vendor/ inserts itself at sys.path[0] when app is imported, which causes
+# src/app/vendor/scripts/ to shadow src/scripts/ and break `import scripts.reporting`.
+# Force src/ back to position 0 after app imports are done.
 _SRC = str(Path(__file__).resolve().parent.parent / "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
+if _SRC in sys.path:
+    sys.path.remove(_SRC)
+sys.path.insert(0, _SRC)
 
 
 @pytest.fixture

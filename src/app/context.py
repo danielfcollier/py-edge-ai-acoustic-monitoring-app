@@ -26,6 +26,7 @@ class PipelineContext:
     # --- Inference State ---
     current_event_label: str = "Silence"
     current_confidence: float = 0.0
+    top_classes: list[tuple[str, float]] = field(default_factory=list)
     should_infer: bool = True
 
     # --- Metrics State ---

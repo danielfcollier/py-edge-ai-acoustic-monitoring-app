@@ -22,6 +22,9 @@ def _make_sink(context, policies, privacy_active):
     mock_settings.CONFIG.services.alert_cooldown_seconds = 0
     mock_settings.CONFIG.services.day_start_hour = 6
     mock_settings.CONFIG.services.night_start_hour = 22
+    mock_settings.CONFIG.services.telegram_notification_mode = "instant"
+    mock_settings.CONFIG.services.telegram_cumulative_window_minutes = 5
+    mock_settings.CONFIG.services.alert_min_display_confidence = 0.0
 
     with (
         patch("app.sinks.policy_engine_sink.settings", mock_settings),
