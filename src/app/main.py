@@ -79,6 +79,24 @@ def ensure_models_present():
         setup_yamnet.main()
 
 
+def _fix_output_permissions(output_path: Path) -> None:
+    """When invoked via sudo, chown output_path to the real user so
+    subsequent non-root runs can write recordings and CSV logs."""
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user or os.getuid() != 0:
+        return
+    try:
+        import pwd
+
+        pw = pwd.getpwnam(sudo_user)
+        for p in [output_path, *output_path.iterdir()]:
+            if p.stat().st_uid == 0:
+                os.chown(p, pw.pw_uid, pw.pw_gid)
+        logger.info(f"🔑 Output permissions fixed: {output_path} → {sudo_user}")
+    except Exception as exc:
+        logger.warning(f"⚠️ Could not fix output permissions: {exc}")
+
+
 def main():
     # App Configuration
     args, unknown = parse_cli_args()
@@ -112,7 +130,8 @@ def main():
     output_path = settings.CONFIG.services.recording_output_path
     if not output_path.exists():
         logger.info(f"📁 Creating output directory: {output_path}")
-        output_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
+    _fix_output_permissions(output_path)
 
     # Initialization
     logger.info(f"🚀 Initializing in [{app_config.run_mode.value.upper()}] mode")
