@@ -20,7 +20,7 @@ cd py-edge-ai-acoustic-monitoring-app
 # Install system audio libraries + Python deps in .venv (Python 3.11)
 make install
 
-# Download YAMNet TFLite model and class map
+# Download YAMNet ONNX model and class map
 make setup-models
 ```
 
@@ -31,6 +31,18 @@ make run               # auto-detect microphone
 make run-default       # force default PC microphone
 make list-devices      # print available audio input devices
 ```
+
+## Related packages
+
+This project builds on top of:
+
+| Package | Role |
+|---|---|
+| [`umik-base-app`](https://github.com/danielfcollier/umik-base-app) | Core audio pipeline — `AudioBaseApp`, `AudioPipeline`, `AudioSink`, ZMQ producer/consumer, mic detection and calibration adapter |
+| [`audio-tools`](https://github.com/danielfcollier/audio-tools) | CLI utilities for recording, playback, and audio device inspection used during development |
+
+`umik-base-app` owns the audio capture loop, FIR calibration, and the `AudioSink` interface that all pipeline stages in this repo implement. If you need to change how audio is captured or calibrated, that's where to look.
+
 
 ## Architecture
 
@@ -53,12 +65,12 @@ Audio Source  (microphone via umik-base-app AudioPipeline)
   CloudUploaderService      (stream WAV + CSV to cloud storage)
 
 Background services:
-  TelegramCommandReceiver   (/privacy, /status commands)
+  TelegramCommandReceiver   (/privacy, /status, /dog, /noise commands)
   SystemHeartbeatService    (GPIO blink + healthchecks.io ping)
   HealthMonitorService      (system metrics CSV)
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
 
 
 ## Project Structure
@@ -77,6 +89,8 @@ src/
       telegram_bot_client.py
       telegram_command_receiver.py
       cloud_uploader_service.py
+      cloud_storage_providers.py
+      noise_monitor_session.py
       recorder_transformer_worker.py
       system_heartbeat_service.py
     context.py        # PipelineContext — shared state bus between all sinks
@@ -87,6 +101,13 @@ src/
     install_services.py  # ai-acoustic-monitor-install-service systemd installer
     setup_yamnet.py   # ai-acoustic-monitor-setup-models model downloader
     generate_report.py
+    label_profile.py     # Generic MFCC profile labeling tool (dog, speaker, alarm, …)
+    review_profile.py    # MFCC-ranked iterative review — ranks candidates by cosine similarity
+    validate_profile.py  # Leave-one-out cross-validation for any MFCC profile
+    flatten_recordings.py  # Deduplicate and flatten recordings directory
+    label_dog.py         # Alias: label_profile with neighbor-dog defaults
+    review_dog.py        # Alias: review_profile with neighbor-dog defaults
+    validate_dog.py      # Alias: validate_profile with neighbor-dog defaults
   setup/
     ai-acoustic-monitor.service    # systemd unit templates
     ai-acoustic-monitor-producer.service
@@ -100,7 +121,11 @@ tests/
 docs/
   user_manual/       # Profile YAMLs + USER_MANUAL.md
   roadmap/
-  grafana/
+  grafana/           # Grafana dashboard JSON + provisioning files
+  ARCHITECTURE.md
+  OBSERVABILITY.md
+  RECOGNITION.md     # YAMNet pipeline + MFCC profile recognition (label/review/validate)
+  YAMNET.md
 
 pyproject.toml       # Project metadata + tool config (ruff, mypy, pytest)
 setup.py             # stdeb packaging entry points and data_files
@@ -159,33 +184,6 @@ make test-deb      # verify the package in a clean Docker container (DISTRO=book
 ```
 
 `build_deb.sh` patches the generated `debian/control` to strip Python package dependencies (vendored), fixes the Python 3.11 shebang in entry points via `postinst`, and validates that key entry points and data files are present in the archive.
-
-### Publishing to the APT repository (Magalu Cloud)
-
-```bash
-# One-time: add to .env
-DEB_S3_BUCKET=your-bucket-name
-GPG_KEY_ID=your-gpg-fingerprint
-GPG_KEY_FILE=ai-acoustic-monitor.gpg.key
-GPG_PUBKEY_FILE=ai-acoustic-monitor.gpg.pub
-
-# Publish a built .deb
-make publish-deb BUCKET=your-bucket-name
-
-# Or run the full release in one step (bump + build + publish)
-make release                        # defaults to patch bump
-make release VERSION_BUMP=minor
-```
-
-`publish_repo.py` builds a fully compliant Debian repository layout (pool, dists, Packages.gz, Release, InRelease, Release.gpg) in the S3 bucket. The script is idempotent — re-publishing the same version is a no-op.
-
-**GPG key setup (one-time):**
-
-```bash
-gpg --full-generate-key
-gpg --armor --export <KEY_ID> > ai-acoustic-monitor.gpg.pub
-gpg --armor --export-secret-keys <KEY_ID> > ai-acoustic-monitor.gpg.key
-```
 
 
 ## Submitting a Pull Request

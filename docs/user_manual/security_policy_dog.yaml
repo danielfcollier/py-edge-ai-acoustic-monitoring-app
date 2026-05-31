@@ -1,0 +1,105 @@
+# 🐕 Neighbour Dog Monitor
+#
+# Single-purpose policy: records and alerts on neighbour dog barking
+# for noise logs and dispute evidence.
+#
+# Threshold tuning (calibrated from field data, May 2026):
+#   - Direct dog labels (Dog, Bark, Howl …)  → confidence > 0.25
+#   - Domestic animals, pets                 → confidence > 0.25
+#   - Livestock, farm animals, …             → confidence > 0.40
+#     (broader class; higher floor avoids ambient misclassifications)
+
+variables:
+  day_start: 6
+  night_start: 22
+  day_limit: 55.0
+  night_limit: 45.0
+  calibration_file_path: "/home/collier/calibration.txt"
+
+hardware:
+  calibration_file: "{calibration_file_path}"
+
+services:
+  internet_enabled: false
+  heartbeat_enabled: true
+  telegram_enabled: true
+  cloud_storage_enabled: false
+  recording_output_path: "recordings"
+  heartbeat_interval_seconds: 60
+  gpio_heartbeat_pin: 17
+  hc_ping_url: "{HC_PING_URL}"
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  alert_cooldown_seconds: 60
+  day_start_hour: "{day_start}"
+  night_start_hour: "{night_start}"
+  telegram_notification_mode: "cumulative"
+  telegram_cumulative_window_minutes: 5
+  alert_min_display_confidence: 0.3
+  cloud:
+    provider: "magalu"
+    bucket_name: "{MAGALU_BUCKET}"
+
+feature_extractor:
+  sad_threshold_rms: 0.002
+  sad_threshold_flux: 1.0
+  sad_threshold_dbspl: 40.0
+  exclude_classes:
+    - "Silence"
+    - "Inside, small room"
+    - "Wind"
+    - "Wind noise"
+    - "White noise"
+    - "Mouse"
+    - "Mechanical fan"
+    - "Camera"
+    - "Outside, rural or natural"
+    - "Mechanisms"
+    - "Sound Effect"
+    - "Rustling leaves"
+    - "Animal"
+    - "Wild animals"
+    - "Bird"
+    - "Bird vocalization, bird call, bird song"
+    - "Chirp, tweet"
+    - "Crow"
+    - "Frog"
+    - "Speech"
+    - "Child speech, kid speaking"
+    - "Narration, monologue"
+    - "Speech synthesizer"
+
+reporting:
+  days_to_report: 30
+  limits:
+    day_db: "{day_limit}"
+    night_db: "{night_limit}"
+  category_mapping:
+    "Dog": "Dog Barking"
+    "Bark": "Dog Barking"
+    "Howl": "Dog Barking"
+    "Whimper": "Dog Barking"
+    "Canidae, dogs, wolves": "Dog Barking"
+    "Domestic animals, pets": "Dog Barking"
+    "Livestock, farm animals, working animals": "Dog Barking"
+
+policies:
+  - name: "Dog Barking"
+    description: "Records and alerts on neighbour dog vocalizations for noise logs and dispute evidence."
+    condition: >
+      (current_event_label in [
+        'Dog', 'Bark', 'Howl',
+        'Whimper', 'Whimper (dog)',
+        'Canidae, dogs, wolves',
+        'Domestic animals, pets'
+      ] and current_confidence > 0.25)
+      or
+      (current_event_label in [
+        'Livestock, farm animals, working animals'
+      ] and current_confidence > 0.40)
+    actions:
+      - "log_metadata"
+      - "record_evidence"
+      - "telegram_alert"
+      - "cloud_upload"
+    ignore_privacy: true
