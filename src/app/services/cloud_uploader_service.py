@@ -167,7 +167,7 @@ class CloudUploaderService:
                 self._provider.upload_fileobj(wav_buffer, key, extra_args={"Metadata": s3_metadata})
             elif hasattr(self._provider, "client"):
                 self._provider.client.upload_fileobj(
-                    wav_buffer, self._provider.bucket_name, key, ExtraArgs={"Metadata": s3_metadata}
+                    wav_buffer, self._provider.bucket, key, ExtraArgs={"Metadata": s3_metadata}
                 )
             else:
                 return False
@@ -300,7 +300,7 @@ class CloudUploaderService:
         is_cal = meta.get("calibrated", False)
 
         lines = [
-            "📁 **New Evidence Uploaded**",
+            "📁 New Evidence Uploaded",
             f"🏷️ Label: {meta.get('label', 'unknown')}",
             f"🎯 Conf: {float(meta.get('confidence', 0.0)):.2f}",
         ]
@@ -311,6 +311,7 @@ class CloudUploaderService:
                 lines.append(f"🔊 dBSPL: {float(dbspl):.1f} dB")
 
         lines.append(f"⏱️ Duration: {event['duration_sec']:.1f}s")
+        lines.append(f"🔑 ID: {str(event['uuid'])[:8]}")
 
         msg = "\n".join(lines)
         self._telegram.send_message_sync(msg)

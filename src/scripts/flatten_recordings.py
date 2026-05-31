@@ -1,15 +1,19 @@
 """
 Flatten the recordings directory: move all WAVs from subdirectories into the
 root of recordings/, deduplicating by filename (keeping the oldest copy when
-multiple files share the same name). Updates .neighbour-dog_labels.json paths too.
+multiple files share the same name). Updates .neighbor_dog_labels.json paths too.
+
+Subdirectories listed in --exclude-dirs (default: clips) are left untouched.
+The clips/ directory is excluded by default because it holds intentional MFCC
+training clips that carry their own label entries and must keep their relative paths.
 
 Usage:
-    ai-acoustic-monitor-flatten-recordings [--recordings DIR] [--labels FILE] [--dry-run]
+    ai-acoustic-monitor-flatten-recordings [--recordings DIR] [--labels FILE]
+                                            [--exclude-dirs DIR ...] [--dry-run]
 """
 
 import argparse
 import json
-import os
 import shutil
 import sys
 from collections import defaultdict
@@ -26,13 +30,31 @@ def _save_labels(labels_path: Path, labels: dict) -> None:
     labels_path.write_text(json.dumps(labels, indent=2, sort_keys=True))
 
 
+def _is_excluded(wav: Path, recordings_dir: Path, excluded: set[str]) -> bool:
+    """Return True if wav lives inside any top-level excluded subdirectory."""
+    try:
+        rel = wav.relative_to(recordings_dir)
+    except ValueError:
+        return False
+    return rel.parts[0] in excluded
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Flatten recordings/ subdirectories into root, deduplicating by filename.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--recordings", default="recordings", help="Recordings directory")
-    parser.add_argument("--labels", default=None, help="Labels JSON file (default: <recordings>/.neighbour-dog_labels.json)")
+    parser.add_argument(
+        "--labels", default=None, help="Labels JSON file (default: <recordings>/.neighbor_dog_labels.json)"
+    )
+    parser.add_argument(
+        "--exclude-dirs",
+        nargs="*",
+        default=["clips"],
+        metavar="DIR",
+        help="Top-level subdirectories to leave untouched (default: clips)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Show what would happen without making changes")
     args = parser.parse_args()
 
@@ -41,18 +63,22 @@ def main() -> None:
         print(f"Error: recordings directory not found: {recordings_dir}", file=sys.stderr)
         sys.exit(1)
 
-    labels_path = Path(args.labels).resolve() if args.labels else recordings_dir / ".neighbour-dog_labels.json"
+    excluded: set[str] = set(args.exclude_dirs or [])
+
+    labels_path = Path(args.labels).resolve() if args.labels else recordings_dir / ".neighbor_dog_labels.json"
     labels = _load_labels(labels_path)
     dry = args.dry_run
 
     if dry:
         print("DRY RUN — no changes will be made.\n")
+    if excluded:
+        print(f"Excluding subdirectories: {', '.join(sorted(excluded))}\n")
 
-    # Collect all WAVs: root-level and in subdirectories
+    # Collect all WAVs: root-level and in non-excluded subdirectories
     root_wavs = {f.name: f for f in recordings_dir.glob("*.wav")}
     sub_wavs: dict[str, list[Path]] = defaultdict(list)
     for wav in recordings_dir.rglob("*.wav"):
-        if wav.parent != recordings_dir:
+        if wav.parent != recordings_dir and not _is_excluded(wav, recordings_dir, excluded):
             sub_wavs[wav.name].append(wav)
 
     all_names = set(root_wavs) | set(sub_wavs)
@@ -124,14 +150,18 @@ def main() -> None:
     print(f"\nSummary: {moved} moved, {deleted} duplicates deleted, {removed_dirs} empty dirs removed.")
 
     if labels and not dry:
-        # Remap label paths: replace any subdirectory path with the root-level path
+        # Remap label paths: replace any non-excluded subdirectory path with the root-level filename.
+        # Paths inside excluded directories (e.g. clips/) are kept verbatim.
         updated = {}
         conflicts: list[str] = []
         for old_path, label in labels.items():
             p = Path(old_path)
-            new_path = str(recordings_dir / p.name)
+            if p.parts[0] in excluded:
+                new_path = old_path  # preserve clips/ paths as-is
+            else:
+                new_path = p.name  # flatten to root filename
             if new_path in updated and updated[new_path] != label:
-                conflicts.append(f"  CONFLICT {p.name}: '{updated[new_path]}' vs '{label}'")
+                conflicts.append(f"  CONFLICT {new_path}: '{updated[new_path]}' vs '{label}'")
             else:
                 updated[new_path] = label
         if conflicts:
@@ -144,8 +174,12 @@ def main() -> None:
         print(f"Labels: {old_count} entries → {new_count} (deduped paths saved to {labels_path.name})")
     elif dry and labels:
         # Show what label remapping would look like
-        remapped = sum(1 for p in labels if Path(p).parent != recordings_dir)
-        print(f"Labels: {remapped} path(s) would be remapped.")
+        remapped = sum(
+            1
+            for p in labels
+            if (Path(p).is_absolute() or Path(p).parent != Path(".")) and Path(p).parts[0] not in excluded
+        )
+        print(f"Labels: {remapped} path(s) would be remapped ({len(excluded)} excluded dir(s) left unchanged).")
 
     if skipped:
         print(f"Skipped: {skipped}")
