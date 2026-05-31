@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "umik-base-app>=0.6.0",
+    "umik-base-app>=0.10.1",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
@@ -39,6 +39,10 @@ ai-acoustic-monitor = "scripts.configure:main"
 ai-acoustic-monitor-setup-models = "scripts.setup_yamnet:main"
 ai-acoustic-monitor-install-service = "scripts.install_services:main"
 ai-acoustic-monitor-flatten-recordings = "scripts.flatten_recordings:main"
+ai-acoustic-monitor-label-profile = "scripts.label_profile:main"
+ai-acoustic-monitor-review-profile = "scripts.review_profile:main"
+ai-acoustic-monitor-validate-profile = "scripts.validate_profile:main"
+# Dog-specific aliases — equivalent to passing --target-label neighbor-dog --other-label other-sounds
 ai-acoustic-monitor-label-dog = "scripts.label_dog:main"
 ai-acoustic-monitor-review-dog = "scripts.review_dog:main"
 ai-acoustic-monitor-validate-dog = "scripts.validate_dog:main"
