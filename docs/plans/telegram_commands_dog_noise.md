@@ -2,22 +2,22 @@
 
 Branch: `feat-edge-monitor` (continue after MFCC work is stable)
 
----
+
 
 ## 1. Label rename (dog identification scripts)
 
 Done!
 
----
+
 
 ## 2. `/dog` command
 
-**Intent:** manual registration when the system missed a neighbour dog bark (YAMNet mislabelled it).
+**Intent:** manual registration when the system missed a neighbor dog bark (YAMNet mislabelled it).
 
 **Behaviour:**
 - Appends one row to `metrics_buffer.csv`
-- Schema: `id=uuid, timestamp=now, label=NeighbourDog, confidence=1.0, rms=0.0, dbspl=0.0, flux=0.0, cpu=0.0, ram=0.0, temp=0.0, disk=0.0, disk_attached=0.0`
-- Replies: `🐕 Neighbour dog registered — HH:MM:SS`
+- Schema: `id=uuid, timestamp=now, label=NeighborDog, confidence=1.0, rms=0.0, dbspl=0.0, flux=0.0, cpu=0.0, ram=0.0, temp=0.0, disk=0.0, disk_attached=0.0`
+- Replies: `🐕 Neighbor dog registered — HH:MM:SS`
 - **No privacy gate** — always works
 
 **Files to touch:**
@@ -25,14 +25,14 @@ Done!
 - New method `_handle_dog()`:
   ```python
   def _handle_dog(self) -> None:
-      row = [str(uuid.uuid4()), datetime.now().strftime(...), "NeighbourDog", "1.0",
+      row = [str(uuid.uuid4()), datetime.now().strftime(...), "NeighborDog", "1.0",
              "0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]
       _append_csv(self._csv_path, row)
-      self._reply(f"🐕 Neighbour dog registered — {datetime.now().strftime('%H:%M:%S')}")
+      self._reply(f"🐕 Neighbor dog registered — {datetime.now().strftime('%H:%M:%S')}")
   ```
 - The `_csv_path` needs to be passed in from `main.py` (same path as `SmartBufferSink`).
 
----
+
 
 ## 3. `/noise [duration]` command
 
@@ -93,7 +93,7 @@ class NoiseMonitorSession:
 - New file: `src/app/services/noise_monitor_session.py`
 - `src/app/main.py`: pass `csv_path` and `output_path` to `TelegramCommandReceiver`
 
----
+
 
 ## 4. Architecture changes in `main.py`
 
@@ -110,7 +110,7 @@ telegram_cmds = TelegramCommandReceiver(
 )
 ```
 
----
+
 
 ## 5. Testing
 
@@ -118,7 +118,7 @@ telegram_cmds = TelegramCommandReceiver(
 - Unit test `NoiseMonitorSession`: mock `context.metrics`, verify windows written, privacy stops session, timer reset works
 - Add mock values to `_make_sink()` pattern (same as `test_policy_engine_sink.py`) if new settings added
 
----
+
 
 ## Implementation order
 
