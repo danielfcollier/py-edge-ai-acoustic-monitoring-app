@@ -101,9 +101,13 @@ YAMNet tells you a sound belongs to a class. The MFCC profile layer goes one lev
 ### Workflow
 
 ```
-label_profile → review_profile → validate_profile
-    ↑___________________________|
-          iterate until stable
+Dev machine:
+  label_profile → review_profile → validate_profile → export_profile → .npz
+      ↑___________________________|                                       ↓
+            iterate until stable                                    copy to Pi
+
+Raspberry Pi:
+  security_policy.yaml (profile_file: neighbor-dog.mfcc.npz)
 ```
 
 #### Step 1 — Seed labels
@@ -213,6 +217,107 @@ Labels are stored in `<recordings>/.mfcc_labels.json` as a flat JSON object mapp
 ```
 
 Label strings are arbitrary — whatever you pass as `--target-label` and `--other-label`. The `mixed` label is always reserved for the excluded class.
+
+### Step 4 — Export the profile for deployment
+
+The training tools require the original WAV files to compute MFCC vectors. The Raspberry Pi does not — it only needs the pre-computed vectors. Export them to a single portable file:
+
+```bash
+ai-acoustic-monitor-export-profile \
+  --recordings recordings \
+  --target-label neighbor-dog \
+  --output neighbor-dog.mfcc.npz
+```
+
+Output:
+```
+Computing MFCC vectors for 18 'neighbor-dog' example(s)…
+✅ Exported 18 vector(s) → recordings/neighbor-dog.mfcc.npz  (14.2 KB)
+
+Copy to the Pi and add to security_policy.yaml:
+  mfcc_profiles:
+    - profile_file: "neighbor-dog.mfcc.npz"
+      target_label: "neighbor-dog"
+      threshold: 0.850  # replace with the value from validate_profile
+```
+
+Copy the `.npz` to the Pi alongside your recordings directory (or any path you prefer):
+
+```bash
+scp recordings/neighbor-dog.mfcc.npz pi@raspberrypi:~/recordings/
+```
+
+### Step 5 — Activate the profile in the policy file
+
+Add an `mfcc_profiles` block to `security_policy.yaml` on the Pi. Use `profile_file` (pre-exported, no WAVs needed) rather than `labels_file`:
+
+```yaml
+mfcc_profiles:
+  - profile_file: "neighbor-dog.mfcc.npz"   # relative to recording_output_path
+    target_label: "neighbor-dog"             # must match the label used during export
+    threshold: 0.843                         # from validate_profile recommended output
+    method: "nearest"                        # "nearest" (default) or "centroid"
+    trigger_on_labels:                       # only score when YAMNet predicts one of these
+      - "Dog"
+      - "Bark"
+      - "Howl"
+      - "Canidae, dogs, wolves"
+    actions_on_match:                        # actions when score >= threshold
+      - "telegram_alert"
+      - "cloud_upload"
+    actions_on_no_match:                     # actions when score < threshold
+      - "cloud_upload"                       # still upload — don't discard evidence
+```
+
+> **`labels_file` vs `profile_file`** — use `labels_file` when the training WAVs are present on the machine (e.g. during development). Use `profile_file` on edge devices where only the exported `.npz` is available. Exactly one of the two must be set per profile entry.
+
+**How it works at runtime:**
+
+1. A YAMNet policy rule fires `record_evidence` → a complete WAV is written and queued.
+2. The `RecorderTransformerWorker` picks up the recording (off the hot path) and scores it against the profile using `MfccScorer`.
+3. The resulting `mfcc_scores` and `effective_actions` are attached to the event metadata.
+4. `CloudUploaderService` checks `effective_actions`:
+   - If `"telegram_alert"` is present (or `effective_actions` is not set) → Telegram alert is sent.
+   - If `"telegram_alert"` is absent → alert is suppressed.
+5. The upload always proceeds (controlled by the policy rule, not MFCC).
+6. MFCC scores are appended to `mfcc_scores.csv` for later analysis.
+
+> The `"Policy Triggered"` alert (sent at the moment of detection) is **not** affected by MFCC scoring — it fires on the hot path before the recording is complete. MFCC scoring only affects the `"New Evidence Uploaded"` alert.
+
+**`trigger_on_labels`** — if non-empty, MFCC scoring only runs when the YAMNet label matches one of the listed values. Leave it empty to score every recording regardless of class. Use it to avoid running MFCC on obviously unrelated events (glass breaks, footsteps, etc.).
+
+**`actions_on_match` / `actions_on_no_match`** — supported values: `telegram_alert`, `cloud_upload`. When multiple `mfcc_profiles` are configured, the effective actions are the **intersection** across all profiles — an action only fires if every profile agrees on it.
+
+**Path resolution** — both `labels_file` and `profile_file` are resolved relative to `services.recording_output_path` when not absolute.
+
+### Step 6 — Retrospective analysis with score_recordings
+
+After accumulating recordings, you can score the entire directory offline without running the full app:
+
+```bash
+ai-acoustic-monitor-score-recordings \
+  --recordings recordings \
+  --target-label neighbor-dog \
+  --threshold 0.843 \
+  --since 7d \
+  --output reports/neighbor-dog-scores.csv
+```
+
+This is useful for:
+- Auditing which recordings would have been suppressed at a given threshold
+- Comparing `nearest` vs `centroid` scoring on historical data
+- Identifying new examples to add to the training set (files just below threshold)
+
+| Argument | Default | Description |
+|---|---|---|
+| `--recordings DIR` | `recordings` | Recordings directory |
+| `--labels FILE` | `<recordings>/.mfcc_labels.json` | Labels JSON file |
+| `--target-label LABEL` | `target` | Profile label to score against |
+| `--threshold FLOAT` | `0.85` | Cosine similarity threshold for a match |
+| `--method nearest\|centroid` | `nearest` | Scoring method |
+| `--since Nd` | — | Only score files modified in the last N days (e.g. `7d`) |
+| `--output FILE` | `<recordings>/mfcc_scores_offline.csv` | Output CSV path |
+
 
 ### CLI reference
 
