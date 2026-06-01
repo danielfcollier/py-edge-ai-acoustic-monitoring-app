@@ -10,7 +10,7 @@ services:
     region: "br-se1"          # see region tables below
 ```
 
----
+
 
 ## Magalu Object Storage (default)
 
@@ -43,7 +43,7 @@ services:
     region: "br-ne1"
 ```
 
----
+
 
 ## AWS S3
 
@@ -76,7 +76,7 @@ services:
     region: "sa-east-1"
 ```
 
----
+
 
 ## GCP Cloud Storage
 
@@ -99,7 +99,7 @@ services:
     gcp_credentials_path: "/etc/ai-acoustic-monitor/gcp-key.json"
 ```
 
----
+
 
 ## Upload Structure
 
@@ -113,7 +113,7 @@ services:
 
 Each WAV upload includes S3 object metadata: `label`, `confidence`, `calibrated`, `uuid`, `timestamp`.
 
----
+
 
 ## Offline Fallback
 

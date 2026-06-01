@@ -250,14 +250,16 @@ class PolicyEngineSink(AudioSink):
             return
 
         window_min = int(self._cumulative_window // 60)
-        lines = [f"🔔 **Alert Summary** (last {window_min} min)", ""]
+        lines = [f"🔔 Alert Summary (last {window_min} min)", ""]
 
         for policy_name, entry in self._cumulative_buffer.items():
             lines.append(f"🛡️ {policy_name}  ×{entry.count}")
-            lines.append(f"   📊 dBSPL: {entry.peak_dbspl:.1f}  RMS: {entry.peak_rms:.4f}  flux: {entry.peak_flux:.1f}")
+            lines.append(
+                f"  ↳ 📊 dBSPL: {entry.peak_dbspl:.1f}  RMS: {entry.peak_rms:.4f}  flux: {entry.peak_flux:.1f}"
+            )
             if entry.best_confidence >= self._min_display_confidence and entry.best_label:
                 top_str = ", ".join(f"{n} ({s:.2f})" for n, s in entry.top_classes[:3])
-                lines.append(f"   👂 {entry.best_label} ({entry.best_confidence:.2f})  —  {top_str}")
+                lines.append(f"  ↳ 👂 {entry.best_label} ({entry.best_confidence:.2f})  —  {top_str}")
             lines.append("")
 
         lines.append(f"🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -273,7 +275,7 @@ class PolicyEngineSink(AudioSink):
         m = self._context.metrics
 
         lines = [
-            "🚨 **Policy Triggered**",
+            "🚨 Policy Triggered",
             f"🛡️ Rule: {policy.name}",
             f"🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}",
             "",

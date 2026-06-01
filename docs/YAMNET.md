@@ -26,6 +26,15 @@ YAMNet is built upon the **MobileNetV1** architecture, making it relatively ligh
 * **AudioSet Dataset:** [Google Research AudioSet Page](https://research.google.com/audioset/) (Describes the dataset used for training)
 * **Model Source Code and Details:** [TensorFlow Models GitHub - YAMNet](https://github.com/tensorflow/models/tree/master/research/audioset/yamnet) (Includes the code, class mapping, and technical details)
 
+### Model format used in this project
+
+This project runs YAMNet in **ONNX format** via `onnxruntime`, not the original TFLite or SavedModel formats. The ONNX model is converted from the TFLite checkpoint and distributed as a GitHub release asset:
+
+* **ONNX model**: downloaded automatically by `ai-acoustic-monitor-setup-models` from the [project releases](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/releases/latest)
+* **Class map**: `yamnet_class_map.csv` (521 labels) from the original AudioSet repository
+
+Using ONNX removes the TensorFlow runtime dependency, which is impractical on ARM/Raspberry Pi. `onnxruntime` provides a lightweight, cross-platform inference engine that runs efficiently on both x86 and ARM targets.
+
 ## 2. The Classification Model
 
 ### Architecture
