@@ -10,6 +10,7 @@ GitHub: https://github.com/danielfcollier
 Year: 2026
 """
 
+import csv
 import io
 import logging
 import queue
@@ -40,6 +41,7 @@ RETRY_INTERVAL_SECONDS = 60
 # --- File & Path Templates ---
 FILENAME_OFFLINE_RECORDING = "evidence-{timestamp}-{uuid}.wav"
 FILENAME_ROTATED_CSV = "metrics-{date}.csv"
+MFCC_SCORES_CSV_FILE = "mfcc_scores.csv"
 
 # --- Cloud Key Templates ---
 S3_KEY_RECORDING = "recordings/evidence-{timestamp}-{uuid}.wav"
@@ -173,7 +175,10 @@ class CloudUploaderService:
                 return False
 
             logger.info(f"⬆️ Stream Upload Success: {key}")
-            if self._config.telegram_enabled:
+            self._write_mfcc_scores_csv(event)
+            effective_actions = event.get("metadata", {}).get("effective_actions")
+            telegram_allowed = effective_actions is None or "telegram_alert" in effective_actions
+            if self._config.telegram_enabled and telegram_allowed:
                 self._send_telegram_alert(event)
             return True
         except Exception as e:
@@ -291,6 +296,25 @@ class CloudUploaderService:
                 except Exception as e:
                     logger.error(f"Retry Error: {e}")
 
+    def _write_mfcc_scores_csv(self, event: dict) -> None:
+        mfcc_scores = event.get("metadata", {}).get("mfcc_scores")
+        if not mfcc_scores:
+            return
+
+        csv_path = self._recordings_dir / MFCC_SCORES_CSV_FILE
+        write_header = not csv_path.exists()
+
+        try:
+            with open(csv_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(["uuid", "timestamp", "yamnet_label", "mfcc_label", "mfcc_score"])
+                label = event.get("metadata", {}).get("label", "unknown")
+                for mfcc_label, score in mfcc_scores.items():
+                    writer.writerow([event["uuid"], event["timestamp"], label, mfcc_label, score])
+        except Exception as e:
+            logger.error(f"❌ Failed to write mfcc_scores.csv: {e}")
+
     def _send_telegram_alert(self, event):
         """
         Formats and sends a notification to the configured Telegram Chat.
@@ -312,6 +336,17 @@ class CloudUploaderService:
 
         lines.append(f"⏱️ Duration: {event['duration_sec']:.1f}s")
         lines.append(f"🔑 ID: {str(event['uuid'])[:8]}")
+
+        mfcc_scores = meta.get("mfcc_scores")
+        if mfcc_scores:
+            for mfcc_label, score in mfcc_scores.items():
+                threshold = next(
+                    (cfg.threshold for cfg in settings.CONFIG.mfcc_profiles if cfg.target_label == mfcc_label),
+                    None,
+                )
+                matched = threshold is not None and score >= threshold
+                icon = "✅" if matched else "❌"
+                lines.append(f"🐾 {mfcc_label}: {score:.2f} {icon}")
 
         msg = "\n".join(lines)
         self._telegram.send_message_sync(msg)

@@ -10,6 +10,7 @@ here in a background thread so the real-time pipeline is never blocked.
 import logging
 import queue
 import threading
+from pathlib import Path
 
 from umik_base_app.transformers.calibrator_transformer import CalibratorTransformer
 
@@ -34,9 +35,11 @@ class RecorderTransformerWorker:
         self._upload_queue = upload_queue
         self._stop_event = threading.Event()
         self._calibrator = None
+        self._scorers: list[tuple] = []  # (MfccProfileConfig, MfccScorer)
 
         if settings.CONFIG.services.save_calibrated_wave:
             self._init_calibration()
+        self._init_mfcc_scorers()
 
     def _init_calibration(self):
         try:
@@ -56,6 +59,45 @@ class RecorderTransformerWorker:
         except Exception as e:
             logger.critical(f"❌ Calibration init failed: {e}. Evidence will be uploaded uncalibrated.")
             self._calibrator = None
+
+    def _init_mfcc_scorers(self):
+        try:
+            from scripts.recognition.mfcc_core import MfccScorer
+        except ImportError:
+            return
+
+        output_dir = settings.CONFIG.services.recording_output_path
+        for cfg in settings.CONFIG.mfcc_profiles:
+            try:
+                if cfg.profile_file:
+                    p = Path(cfg.profile_file)
+                    if not p.is_absolute():
+                        p = output_dir / p
+                    if not p.exists():
+                        logger.warning(f"⚠️ MFCC profile file not found: {p}  (skipping '{cfg.target_label}')")
+                        continue
+                    scorer = MfccScorer.from_profile_file(p, cfg.target_label, method=cfg.method)
+                    source = p.name
+                else:
+                    p = Path(cfg.labels_file)
+                    if not p.is_absolute():
+                        p = output_dir / p
+                    if not p.exists():
+                        logger.warning(f"⚠️ MFCC labels file not found: {p}  (skipping '{cfg.target_label}')")
+                        continue
+                    scorer = MfccScorer(p, cfg.target_label, method=cfg.method)
+                    source = p.name
+
+                if scorer.ready:
+                    self._scorers.append((cfg, scorer))
+                    logger.info(
+                        f"🎯 MFCC scorer loaded: '{cfg.target_label}' from {source}"
+                        f" ({len(scorer._target_vecs)} examples)"
+                    )
+                else:
+                    logger.warning(f"⚠️ MFCC scorer for '{cfg.target_label}' has no examples — skipping.")
+            except Exception as e:
+                logger.error(f"❌ MFCC scorer init failed for '{cfg.target_label}': {e}")
 
     def start(self):
         threading.Thread(target=self._worker, name="RecorderTransformer", daemon=True).start()
@@ -79,17 +121,52 @@ class RecorderTransformerWorker:
                 logger.error(f"❌ Upload queue full — dropping event {processed['uuid'][:8]}.")
 
     def _transform(self, event: dict) -> dict:
-        if not self._calibrator:
+        if self._calibrator:
+            try:
+                self._calibrator.reset_state()
+                calibrated_audio = self._calibrator.apply(event["audio_data"])
+                event = {
+                    **event,
+                    "audio_data": calibrated_audio,
+                    "metadata": {**event.get("metadata", {}), "calibrated": True},
+                }
+            except Exception as e:
+                logger.error(f"❌ FIR calibration failed for {event['uuid'][:8]}: {e}. Using raw audio.")
+
+        if self._scorers:
+            event = self._apply_mfcc_scoring(event)
+
+        return event
+
+    def _apply_mfcc_scoring(self, event: dict) -> dict:
+        label = event.get("metadata", {}).get("label", "")
+        sample_rate = event.get("sample_rate", 48000)
+        audio = event["audio_data"]
+
+        mfcc_scores: dict[str, float] = {}
+        effective_actions: set[str] | None = None
+
+        for cfg, scorer in self._scorers:
+            if cfg.trigger_on_labels and label not in cfg.trigger_on_labels:
+                continue
+            score = scorer.score_audio(audio, sample_rate)
+            if score is None:
+                continue
+            mfcc_scores[cfg.target_label] = round(score, 4)
+            matched = score >= cfg.threshold
+            logger.info(
+                f"🎯 MFCC '{cfg.target_label}': {score:.3f} "
+                f"({'✅ match' if matched else '❌ no match'}, threshold {cfg.threshold})"
+            )
+            actions = set(cfg.actions_on_match if matched else cfg.actions_on_no_match)
+            effective_actions = actions if effective_actions is None else effective_actions & actions
+
+        if not mfcc_scores:
             return event
 
-        try:
-            self._calibrator.reset_state()
-            calibrated_audio = self._calibrator.apply(event["audio_data"])
-            return {
-                **event,
-                "audio_data": calibrated_audio,
-                "metadata": {**event.get("metadata", {}), "calibrated": True},
-            }
-        except Exception as e:
-            logger.error(f"❌ FIR calibration failed for {event['uuid'][:8]}: {e}. Using raw audio.")
-            return event
+        metadata = {
+            **event.get("metadata", {}),
+            "mfcc_scores": mfcc_scores,
+            "effective_actions": list(effective_actions) if effective_actions is not None else None,
+        }
+        return {**event, "metadata": metadata}

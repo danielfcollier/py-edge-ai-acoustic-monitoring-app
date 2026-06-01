@@ -83,6 +83,34 @@ reporting:
     "Domestic animals, pets": "Dog Barking"
     "Livestock, farm animals, working animals": "Dog Barking"
 
+# MFCC Profile Recognition (optional — activate after running label/review/validate/export)
+#
+# Workflow (dev machine):
+#   ai-acoustic-monitor-label-profile   --target-label neighbor-dog
+#   ai-acoustic-monitor-review-profile  --target-label neighbor-dog
+#   ai-acoustic-monitor-validate-profile --target-label neighbor-dog
+#   ai-acoustic-monitor-export-profile  --target-label neighbor-dog --output neighbor-dog.mfcc.npz
+#   scp neighbor-dog.mfcc.npz pi@raspberrypi:~/recordings/
+#
+# Then uncomment the block below on the Pi:
+#
+# mfcc_profiles:
+#   - profile_file: "neighbor-dog.mfcc.npz"  # pre-exported on dev machine, no WAVs needed
+#     target_label: "neighbor-dog"
+#     threshold: 0.843                        # use the value from validate_profile output
+#     method: "nearest"
+#     trigger_on_labels:
+#       - "Dog"
+#       - "Bark"
+#       - "Howl"
+#       - "Canidae, dogs, wolves"
+#       - "Domestic animals, pets"
+#     actions_on_match:                       # confirmed match: alert + upload
+#       - "telegram_alert"
+#       - "cloud_upload"
+#     actions_on_no_match:                    # no match: silent upload only
+#       - "cloud_upload"
+
 policies:
   - name: "Dog Barking"
     description: "Records and alerts on neighbour dog vocalizations for noise logs and dispute evidence."

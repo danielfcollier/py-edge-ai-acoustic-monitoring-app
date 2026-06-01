@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 from umik_base_app.settings import Settings as BaseSettings
 
@@ -102,6 +102,23 @@ class ReportingConfig(BaseModel):
     days_to_report: int = 30
     limits: ReportingLimits = ReportingLimits()
     category_mapping: dict[str, str] = Field(default_factory=dict)
+
+
+class MfccProfileConfig(BaseModel):
+    labels_file: str | None = None  # dev machine: compute vectors from labeled WAVs
+    profile_file: str | None = None  # edge device: load pre-exported .npz (no WAVs needed)
+    target_label: str
+    threshold: float = 0.85
+    method: Literal["nearest", "centroid"] = "nearest"
+    trigger_on_labels: list[str] = Field(default_factory=list)
+    actions_on_match: list[str] = Field(default_factory=lambda: ["telegram_alert", "cloud_upload"])
+    actions_on_no_match: list[str] = Field(default_factory=lambda: ["cloud_upload"])
+
+    @model_validator(mode="after")
+    def _require_source(self) -> "MfccProfileConfig":
+        if not self.labels_file and not self.profile_file:
+            raise ValueError("mfcc_profiles entry must specify either 'labels_file' or 'profile_file'")
+        return self
 
 
 class PolicyRule(BaseModel):
@@ -222,6 +239,7 @@ class AppConfig(BaseModel):
     policies: list[PolicyRule]
     services: ServiceConfig = ServiceConfig()
     reporting: ReportingConfig = ReportingConfig()
+    mfcc_profiles: list[MfccProfileConfig] = Field(default_factory=list)
 
 
 # --- Main Settings Class ---
