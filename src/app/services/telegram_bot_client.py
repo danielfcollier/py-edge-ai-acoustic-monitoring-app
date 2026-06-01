@@ -8,11 +8,12 @@ Year: 2026
 """
 
 import asyncio
+import io
 import logging
 import threading
 import time
 
-from telegram import Bot
+from telegram import Bot, InputFile
 from telegram.error import NetworkError
 
 from ..settings import settings
@@ -48,6 +49,36 @@ class TelegramBotClient:
                     self._loop,
                 )
                 future.result(timeout=_SEND_TIMEOUT)
+                return True
+            except NetworkError:
+                if attempt <= retries:
+                    logger.warning(f"⚠️ Telegram Connection Error. Retry {attempt}/{retries} in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    logger.error("❌ Telegram failed after max retries.")
+            except Exception as e:
+                logger.error(f"❌ Telegram Error: {e}")
+                return False
+
+        return False
+
+    def send_audio_sync(self, audio_bytes: bytes, filename: str) -> bool:
+        if not self._enabled:
+            return True
+
+        retries = settings.CONFIG.services.retry_attempts
+        delay = settings.CONFIG.services.retry_delay_seconds
+
+        for attempt in range(1, retries + 2):
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._bot.send_audio(
+                        chat_id=self._chat_id,
+                        audio=InputFile(io.BytesIO(audio_bytes), filename=filename),
+                    ),
+                    self._loop,
+                )
+                future.result(timeout=60)
                 return True
             except NetworkError:
                 if attempt <= retries:

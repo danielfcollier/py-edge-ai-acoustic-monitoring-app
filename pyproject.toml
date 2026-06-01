@@ -1,6 +1,6 @@
 [project]
 name = "ai-acoustic-monitoring-app"
-version = "0.2.2"
+version = "0.2.3"
 description = "AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    "umik-base-app>=0.6.0",
+    "umik-base-app>=0.10.1",
     "dotenv>=0.9.9",
     "pydantic==2.12.3",
     "pydantic-settings>=2.0.0",
@@ -26,6 +26,7 @@ dependencies = [
     "prometheus-client>=0.17.1",
     "python-dotenv>=1.2.1",
     "scipy>=1.16.3",
+    "librosa>=0.10.0",
 ]
 
 [project.urls]
@@ -37,6 +38,12 @@ ai-acoustic-monitor-run = "app.main:main"
 ai-acoustic-monitor = "scripts.configure:main"
 ai-acoustic-monitor-setup-models = "scripts.setup_yamnet:main"
 ai-acoustic-monitor-install-service = "scripts.install_services:main"
+ai-acoustic-monitor-flatten-recordings = "scripts.flatten_recordings:main"
+ai-acoustic-monitor-label-profile = "scripts.recognition.label_profile:main"
+ai-acoustic-monitor-review-profile = "scripts.recognition.review_profile:main"
+ai-acoustic-monitor-validate-profile = "scripts.recognition.validate_profile:main"
+ai-acoustic-monitor-export-profile = "scripts.recognition.export_profile:main"
+ai-acoustic-monitor-score-recordings = "scripts.recognition.score_recordings:main"
 
 [build-system]
 requires = ["hatchling"]

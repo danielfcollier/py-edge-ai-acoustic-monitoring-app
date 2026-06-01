@@ -174,7 +174,7 @@ services:
 
 The directory is created automatically if it doesn't exist. Make sure the service user has write permission to the mount point.
 
-### Prometheus metrics server
+### Prometheus metrics
 
 Enabled by default on port 8000. Control it in the `services:` block:
 
@@ -184,7 +184,7 @@ services:
   prometheus_port: 8000
 ```
 
-When enabled, metrics are available at `http://<device-ip>:8000/metrics` and verified by `--test`.
+See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for the full metrics reference and Grafana dashboard setup.
 
 For the full configuration reference, run `ai-acoustic-monitor --manual`.
 
@@ -208,7 +208,7 @@ ai-acoustic-monitor --test --config security_policy.yaml --env ~/.config/ai-acou
   ✅ Microphone              UMIK-1 detected (device 3)
   ✅ Sample recording        1.0s, 187 KB
   ✅ Telegram                message sent to chat 123456789
-  ✅ Cloud storage           Magalu br-se1 bucket 'acoustic-logs' OK
+  ✅ Cloud storage           bucket 'acoustic-logs' OK
   ⏭️  Heartbeat (HC ping)   HC_PING_URL not configured (skipped)
 
 ────────────────────────────────────────────────────────────────
@@ -248,7 +248,9 @@ When a policy fires, you receive:
 | `/privacy on 2h` | Suppress for a specific duration (`Nh`, `Nm`, `Nd`) |
 | `/privacy off` | Re-enable all alerts immediately |
 | `/privacy status` | Show current state and remaining time |
-| `/status` | System snapshot (label, CPU, RAM, temp, queue depth) |
+| `/status` | System snapshot (label, CPU, RAM, temp, disk, queue depth) |
+| `/dog` | Register a neighbour dog bark the detector missed |
+| `/noise [duration]` | Log a noise disturbance; start 30s-window monitoring (default 3h) |
 
 Rules with `ignore_privacy: true` always fire regardless of privacy state.
 
@@ -286,23 +288,6 @@ hardware:
 ```
 
 
-## 📊 Prometheus & Grafana
-
-When `prometheus_enabled: true`, the app exposes real-time metrics on the configured port. Import `docs/grafana/ai-acoustic-monitor-dashboard.json` for a ready-made dashboard.
-
-Add to your `prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: ai-acoustic-monitor
-    static_configs:
-      - targets: ["<device-ip>:8000"]
-    scrape_interval: 5s
-```
-
-Key metrics: `audio_dbspl` (calibrated mic only), `audio_rms`, `audio_spectral_flux`, `ai_confidence`, `audio_event_count_total{category}`, `system_cpu_usage`, `system_temp_celsius`.
-
-
 ## 💓 Health Monitoring
 
 - **GPIO heartbeat**: connect an LED to the configured pin — it blinks on every heartbeat interval
@@ -314,6 +299,8 @@ Both are configured in the `services:` block of your policy YAML and verified by
 ## 📖 Further Reading
 
 - **Full configuration reference**: `ai-acoustic-monitor --manual`
-- **Architecture & internals**: [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Sound recognition (YAMNet + MFCC profiles)**: [docs/RECOGNITION.md](docs/RECOGNITION.md)
+- **Architecture & internals**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Observability (Prometheus + Grafana)**: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)
 - **Contributing / development setup**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Bug reports**: [GitHub Issues](https://github.com/danielfcollier/py-edge-ai-acoustic-monitoring-app/issues)
