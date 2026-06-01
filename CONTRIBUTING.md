@@ -101,13 +101,14 @@ src/
     install_services.py  # ai-acoustic-monitor-install-service systemd installer
     setup_yamnet.py   # ai-acoustic-monitor-setup-models model downloader
     generate_report.py
-    label_profile.py     # Generic MFCC profile labeling tool (dog, speaker, alarm, …)
-    review_profile.py    # MFCC-ranked iterative review — ranks candidates by cosine similarity
-    validate_profile.py  # Leave-one-out cross-validation for any MFCC profile
     flatten_recordings.py  # Deduplicate and flatten recordings directory
-    label_dog.py         # Alias: label_profile with neighbor-dog defaults
-    review_dog.py        # Alias: review_profile with neighbor-dog defaults
-    validate_dog.py      # Alias: validate_profile with neighbor-dog defaults
+    recognition/
+      mfcc_core.py         # Shared MFCC computation, I/O helpers, and MfccScorer (used by CLI + runtime)
+      label_profile.py     # MFCC profile labeling tool (dog, speaker, alarm, …)
+      review_profile.py    # MFCC-ranked iterative review — ranks candidates by cosine similarity
+      validate_profile.py  # Leave-one-out cross-validation for any MFCC profile
+      export_profile.py    # Export pre-computed vectors to .npz for edge deployment (no WAVs needed)
+      score_recordings.py  # Offline batch scorer — scores a recordings directory against a profile
   setup/
     ai-acoustic-monitor.service    # systemd unit templates
     ai-acoustic-monitor-producer.service
