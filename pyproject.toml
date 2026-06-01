@@ -1,6 +1,6 @@
 [project]
 name = "ai-acoustic-monitoring-app"
-version = "0.2.2"
+version = "0.2.3"
 description = "AI Acoustic Monitoring App"
 authors = [
     {name = "Daniel Collier", email = "danielfcollier@gmail.com"}
